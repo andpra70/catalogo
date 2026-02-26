@@ -570,34 +570,72 @@ function summaryPagesFromWorks(
 
 function scalePageLayoutForFormat(page, fromFormatId, toFormatId) {
   if (!page || fromFormatId === toFormatId) return page;
-  const from = getPageContentBounds(page, fromFormatId);
-  const to = getPageContentBounds(page, toFormatId);
-  const sx = (to.width || 1) / Math.max(1, from.width || 1);
-  const sy = (to.height || 1) / Math.max(1, from.height || 1);
+  const fromFmt = getPageFormat(fromFormatId);
+  const toFmt = getPageFormat(toFormatId);
+  const sx = (toFmt.width || 1) / Math.max(1, fromFmt.width || 1);
+  const sy = (toFmt.height || 1) / Math.max(1, fromFmt.height || 1);
   const sf = Math.min(sx, sy);
+  const scalePosX = (v) => Math.round((v || 0) * sx);
+  const scalePosY = (v) => Math.round((v || 0) * sy);
+  const scaleSize = (v, minVal) => Math.max(minVal, Math.round((v || 0) * sf));
   const scaleText = (t) => ({
     ...t,
-    x: Math.round((t.x || 0) * sx),
-    y: Math.round((t.y || 0) * sy),
-    w: Math.max(40, Math.round((t.w || 0) * sx)),
-    h: Math.max(24, Math.round((t.h || 0) * sy)),
+    x: scalePosX(t.x),
+    y: scalePosY(t.y),
+    w: scaleSize(t.w, 40),
+    h: scaleSize(t.h, 24),
     fontSize: Math.max(10, Math.round((t.fontSize || 16) * sf)),
   });
   const scalePlacement = (p) => ({
     ...p,
-    x: Math.round((p.x || 0) * sx),
-    y: Math.round((p.y || 0) * sy),
-    w: Math.max(40, Math.round((p.w || 0) * sx)),
-    h: Math.max(40, Math.round((p.h || 0) * sy)),
-    captionX: Math.round((p.captionX ?? p.x ?? 0) * sx),
-    captionY: Math.round((p.captionY ?? 0) * sy),
-    captionW: Math.max(40, Math.round((p.captionW || 0) * sx)),
-    captionH: Math.max(24, Math.round((p.captionH || 0) * sy)),
+    x: scalePosX(p.x),
+    y: scalePosY(p.y),
+    w: scaleSize(p.w, 40),
+    h: scaleSize(p.h, 40),
+    captionX: scalePosX(p.captionX ?? p.x ?? 0),
+    captionY: scalePosY(p.captionY ?? 0),
+    captionW: scaleSize(p.captionW, 40),
+    captionH: scaleSize(p.captionH, 24),
   });
   return {
     ...page,
     textBlocks: (page.textBlocks || []).map(scaleText),
     placements: (page.placements || []).map(scalePlacement),
+  };
+}
+
+function estimateRenderedInnerBoundsForFormat(page, fromFormatId, toFormatId, canonicalMetric) {
+  if (!canonicalMetric) return null;
+  const fromFmt = getPageFormat(fromFormatId);
+  const toFmt = getPageFormat(toFormatId);
+  const m = page.margins || { top: 0, right: 0, bottom: 0, left: 0 };
+  const estPageW = Math.max(40, (canonicalMetric.pageWidth || 0) * ((toFmt.width || 1) / Math.max(1, fromFmt.width || 1)));
+  const estPageH = Math.max(40, (canonicalMetric.pageHeight || 0) * ((toFmt.height || 1) / Math.max(1, fromFmt.height || 1)));
+  return {
+    innerWidth: Math.max(40, estPageW - (m.left || 0) - (m.right || 0)),
+    innerHeight: Math.max(40, estPageH - (m.top || 0) - (m.bottom || 0)),
+  };
+}
+
+function fitPageElementsToEstimatedRenderedBoundsSoft(page, fromFormatId, toFormatId, canonicalMetric, boundMode = "margins") {
+  if (!page || page.type === "summary") return page;
+  const est = estimateRenderedInnerBoundsForFormat(page, fromFormatId, toFormatId, canonicalMetric);
+  if (!est) return page;
+  const box = getRenderedConstraintBox(page, est.innerWidth, est.innerHeight, boundMode);
+  return {
+    ...page,
+    placements: (page.placements || []).map((p) => fitPlacementToBoundsSoft(p, box)),
+    textBlocks: (page.textBlocks || []).map((t) => fitTextBlockToBoundsSoft(t, box)),
+  };
+}
+
+function normalizePageElementsToRenderedBounds(page, innerWidth, innerHeight, boundMode = "margins") {
+  if (!page || page.type === "summary") return page;
+  const box = getRenderedConstraintBox(page, innerWidth, innerHeight, boundMode);
+  return {
+    ...page,
+    placements: (page.placements || []).map((p) => normalizePlacementToBounds(p, box)),
+    textBlocks: (page.textBlocks || []).map((t) => normalizeTextBlockToBounds(t, box)),
   };
 }
 
@@ -671,6 +709,7 @@ function createPlacementForWork(workId, x = 42, y = 42) {
     y,
     w: 150,
     h: 190,
+    zIndex: 100,
     borderWidthPct: 5,
     borderColor: "#ffffff",
     imageOffsetX: 0,
@@ -684,6 +723,11 @@ function createPlacementForWork(workId, x = 42, y = 42) {
     captionBorderWidthPct: 5,
     captionBorderColor: "#ffffff",
   };
+}
+
+function nextPlacementLayerZ(page) {
+  const values = (page?.placements || []).map((p) => Number(p?.zIndex)).filter((v) => Number.isFinite(v));
+  return (values.length ? Math.max(...values) : 90) + 10;
 }
 
 function createAutoWorkPage(work, pageFormatId) {
@@ -873,6 +917,55 @@ function normalizePageElementsToBounds(page, pageFormatId, boundMode = "margins"
   };
 }
 
+function fitTextBlockToBoundsSoft(txt, box) {
+  const rawW = Math.max(40, Number(txt.w ?? 220));
+  const rawH = Math.max(28, Number(txt.h ?? 100));
+  const w = rawW > box.maxWidth ? Math.max(40, box.maxWidth) : rawW;
+  const h = rawH > box.maxHeight ? Math.max(28, box.maxHeight) : rawH;
+  const x = clampNum(txt.x ?? 0, box.minX, Math.max(box.minX, box.maxXForWidth(w)));
+  const y = clampNum(txt.y ?? 0, box.minY, Math.max(box.minY, box.maxYForHeight(h)));
+  return { ...txt, x, y, w: Math.round(w), h: Math.round(h) };
+}
+
+function fitPlacementToBoundsSoft(p, box) {
+  const rawW = Math.max(40, Number(p.w ?? 150));
+  const rawH = Math.max(40, Number(p.h ?? 190));
+  const w = rawW > box.maxWidth ? Math.max(40, box.maxWidth) : rawW;
+  const h = rawH > box.maxHeight ? Math.max(40, box.maxHeight) : rawH;
+  const x = clampNum(p.x ?? 0, box.minX, Math.max(box.minX, box.maxXForWidth(w)));
+  const y = clampNum(p.y ?? 0, box.minY, Math.max(box.minY, box.maxYForHeight(h)));
+
+  const rawCaptionW = Math.max(40, Number(p.captionW ?? 220));
+  const rawCaptionH = Math.max(24, Number(p.captionH ?? 52));
+  const captionW = rawCaptionW > box.maxWidth ? Math.max(40, box.maxWidth) : rawCaptionW;
+  const captionH = rawCaptionH > box.maxHeight ? Math.max(24, box.maxHeight) : rawCaptionH;
+  const defaultCaptionY = y + h + 8;
+  const captionX = clampNum(p.captionX ?? x, box.minX, Math.max(box.minX, box.maxXForWidth(captionW)));
+  const captionY = clampNum(p.captionY ?? defaultCaptionY, box.minY, Math.max(box.minY, box.maxYForHeight(captionH)));
+
+  return {
+    ...p,
+    x: Math.round(x),
+    y: Math.round(y),
+    w: Math.round(w),
+    h: Math.round(h),
+    captionX: Math.round(captionX),
+    captionY: Math.round(captionY),
+    captionW: Math.round(captionW),
+    captionH: Math.round(captionH),
+  };
+}
+
+function fitPageElementsToBoundsSoft(page, pageFormatId, boundMode = "margins") {
+  if (!page || page.type === "summary") return page;
+  const box = getPageConstraintBox(page, pageFormatId, boundMode);
+  return {
+    ...page,
+    placements: (page.placements || []).map((p) => fitPlacementToBoundsSoft(p, box)),
+    textBlocks: (page.textBlocks || []).map((t) => fitTextBlockToBoundsSoft(t, box)),
+  };
+}
+
 function readImageFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -910,12 +1003,17 @@ export default function App() {
   const topbarActionsRef = useRef(null);
   const [pageMetrics, setPageMetrics] = useState({});
   const [autoLayoutMode, setAutoLayoutMode] = useState("hero");
+  const autoLayoutModeRef = useRef("hero");
   const [savedProjects, setSavedProjects] = useState(() => loadProjectsIndex());
   const [currentProjectId, setCurrentProjectId] = useState(null);
   const [projectDialog, setProjectDialog] = useState({ open: false, mode: "save", name: "" });
   const [savedThemes, setSavedThemes] = useState(() => loadThemesIndex());
   const [currentThemeId, setCurrentThemeId] = useState(null);
   const [themeDialog, setThemeDialog] = useState({ open: false, mode: "save", name: "" });
+
+  useEffect(() => {
+    autoLayoutModeRef.current = autoLayoutMode;
+  }, [autoLayoutMode]);
 
   useEffect(() => {
     function onDocPointerDown(e) {
@@ -1071,9 +1169,16 @@ export default function App() {
       return;
     }
     setState((prev) => {
+      const fromFmt = prevPageFormatRef.current || prev.pageFormat;
       const toFmt = prev.pageFormat;
       const boundMode = prev.layoutAssist?.boundMode || "margins";
-      const fitPageToNewFormat = (p) => normalizePageElementsToBounds(p, toFmt, boundMode);
+      const canonicalMetric = Object.values(pageMetrics || {}).find((pm) => pm?.pageWidth && pm?.pageHeight) || null;
+      const fitPageToNewFormat = (p) => {
+        const scaled = scalePageLayoutForFormat(p, fromFmt, toFmt);
+        return canonicalMetric
+          ? fitPageElementsToEstimatedRenderedBoundsSoft(scaled, fromFmt, toFmt, canonicalMetric, boundMode)
+          : scaled;
+      };
       return {
         ...prev,
         pages: (prev.pages || []).map((p) => fitPageToNewFormat(p)),
@@ -1376,7 +1481,10 @@ export default function App() {
   function addSelectedWorkToActivePage() {
     if (!activeEditablePage || activeEditablePage.type === "summary" || !selectedWork) return;
     const placement = createPlacementForWork(selectedWork.id, 42, 42);
-    patchPage(activeEditablePage.id, (page) => ({ ...page, placements: [...page.placements, placement] }));
+    patchPage(activeEditablePage.id, (page) => ({
+      ...page,
+      placements: [...page.placements, { ...placement, zIndex: nextPlacementLayerZ(page) }],
+    }));
     patchState((prev) => ({ ...prev, selectedElement: { pageId: activeEditablePage.id, kind: "placement", elementId: placement.id } }));
   }
 
@@ -1386,81 +1494,75 @@ export default function App() {
     return 1;
   }
 
-  function buildAutoLayoutPageForWorks(worksChunk, pageFormat, margins, dimMap, measuredBounds, mode) {
+  function buildAutoLayoutPageForWorks(worksChunk, pageFormat, margins, dimMap, measuredBounds, mode, layoutAssistCfg, themeCfg) {
     const page = createPage("page", worksChunk.length === 1 ? workLabel(worksChunk[0]) : "Pagina opere", margins);
     page.bgColor = "#fbfbfb";
-    const bounds = measuredBounds || getPageContentBounds(page, pageFormat);
-    const areaW = Math.max(140, bounds.width);
-    const areaH = Math.max(180, bounds.height);
-
-    const fitInSlot = (work, slot) => {
-      const dims = dimMap.get(work.id);
-      const aspect = dims?.width && dims?.height ? dims.width / dims.height : 1;
-      const safeAspect = Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
-      const title = workLabel(work);
-      const meta = [work.author, work.year].filter(Boolean).join(", ");
-      const oneLine = [title, meta].filter(Boolean).join(" — ");
-      const approxCharsPerLine = Math.max(18, Math.floor(slot.w / 7.2));
-      const preferOneLine = oneLine.length <= approxCharsPerLine && safeAspect >= 1;
-      const captionOverride = preferOneLine ? oneLine : [title, meta].filter(Boolean).join("\n");
-      const captionH = preferOneLine ? 36 : oneLine.length > approxCharsPerLine * 1.6 ? 62 : 52;
-      const gap = 8;
-      const maxW = Math.max(60, slot.w);
-      const maxH = Math.max(60, slot.h - captionH - gap);
-      let w = maxW;
-      let h = w / safeAspect;
-      if (h > maxH) {
-        h = maxH;
-        w = h * safeAspect;
-      }
-      w = clampNum(Math.round(w), 60, maxW);
-      h = clampNum(Math.round(h), 60, maxH);
-      const x = slot.x + Math.round((slot.w - w) / 2);
-      const y = slot.y + Math.max(0, Math.round((slot.h - h - captionH - gap) / 2));
-      const p = createPlacementForWork(work.id, x, y);
-      p.w = w;
-      p.h = h;
-      p.captionW = Math.min(slot.w, Math.max(160, w));
-      p.captionH = captionH;
-      p.captionX = slot.x + Math.round((slot.w - p.captionW) / 2);
-      p.captionY = clampNum(y + h + gap, slot.y, slot.y + Math.max(0, slot.h - captionH));
-      p.captionOverride = captionOverride;
-      return p;
-    };
+    const showCaption = themeCfg?.autoShowCaptionDefault ?? true;
+    const area = getPageContentBounds(page, pageFormat);
+    const base = { x: 0, y: 0, w: Math.max(80, area.width), h: Math.max(100, area.height) };
+    const gap = 8;
+    const count = Math.max(1, worksChunk.length);
 
     let slots = [];
-    if (mode === "two-cols") {
-      const gap = 12;
-      const w = Math.round((areaW - gap) / 2);
-      const h = Math.round(areaH * 0.92);
-      const y = Math.max(0, Math.round((areaH - h) / 2));
-      slots = [
-        { x: 0, y, w, h },
-        { x: w + gap, y, w, h },
-      ];
-    } else if (mode === "grid4") {
-      const cols = 2;
-      const rows = 2;
-      const gapX = 12;
-      const gapY = 12;
-      const w = Math.round((areaW - gapX) / cols);
-      const h = Math.round((areaH - gapY) / rows);
-      for (let i = 0; i < 4; i += 1) {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        slots.push({ x: col * (w + gapX), y: row * (h + gapY), w, h });
+    if (mode === "hero" || count === 1) {
+      slots = [{ x: base.x, y: base.y, w: base.w, h: base.h }];
+    } else if (mode === "two-cols") {
+      const portrait = base.h >= base.w;
+      if (portrait) {
+        const h1 = Math.floor((base.h - gap) / 2);
+        const h2 = base.h - h1 - gap;
+        slots = [
+          { x: base.x, y: base.y, w: base.w, h: h1 },
+          { x: base.x, y: base.y + h1 + gap, w: base.w, h: h2 },
+        ];
+      } else {
+        const w1 = Math.floor((base.w - gap) / 2);
+        const w2 = base.w - w1 - gap;
+        slots = [
+          { x: base.x, y: base.y, w: w1, h: base.h },
+          { x: base.x + w1 + gap, y: base.y, w: w2, h: base.h },
+        ];
       }
     } else {
-      slots = [{ x: 0, y: 0, w: areaW, h: areaH }];
+      const w1 = Math.floor((base.w - gap) / 2);
+      const w2 = base.w - w1 - gap;
+      const h1 = Math.floor((base.h - gap) / 2);
+      const h2 = base.h - h1 - gap;
+      slots = [
+        { x: base.x, y: base.y, w: w1, h: h1 },
+        { x: base.x + w1 + gap, y: base.y, w: w2, h: h1 },
+        { x: base.x, y: base.y + h1 + gap, w: w1, h: h2 },
+        { x: base.x + w1 + gap, y: base.y + h1 + gap, w: w2, h: h2 },
+      ];
     }
 
-    page.placements = worksChunk.map((work, idx) => fitInSlot(work, slots[idx] || slots[0]));
-    return applyThemeAutoDefaultsToPage(page, state.theme);
+    page.placements = worksChunk.map((work, idx) => {
+      const slot = slots[idx] || slots[slots.length - 1] || { x: 0, y: 0, w: base.w, h: base.h };
+      const captionH = showCaption ? (mode === "grid4" ? 34 : 46) : 0;
+      const captionGap = showCaption ? 6 : 0;
+      const imgH = Math.max(40, slot.h - captionH - captionGap);
+      const p = createPlacementForWork(work.id, slot.x, slot.y);
+      p.x = slot.x;
+      p.y = slot.y;
+      p.w = Math.max(40, slot.w);
+      p.h = imgH;
+      p.showCaption = showCaption;
+      p.captionX = slot.x;
+      p.captionY = slot.y + imgH + captionGap;
+      p.captionW = Math.max(40, slot.w);
+      p.captionH = showCaption ? captionH : 28;
+      p.captionOverride = [workLabel(work), [work.author, work.year].filter(Boolean).join(", ")].filter(Boolean).join("\n");
+      p.zIndex = 100 + idx * 10;
+      return p;
+    });
+
+    return normalizePageElementsToBounds(applyThemeAutoDefaultsToPage(page, themeCfg || state.theme), pageFormat, "margins");
   }
 
   async function autoGeneratePagesFromCatalog() {
     const works = state.works || [];
     if (!works.length) return;
+    const effectiveAutoLayoutMode = autoLayoutModeRef.current || autoLayoutMode || "hero";
     const dimensions = await Promise.all(
       works.map(async (w) => {
         const dims = await readImageDimensions(w.imageUrl);
@@ -1495,20 +1597,27 @@ export default function App() {
           textBlocks: existingPreface.textBlocks || prefacePage.textBlocks,
         };
       }
-      const chunkSize = getAutoLayoutChunkSize(autoLayoutMode);
+      const chunkSize = getAutoLayoutChunkSize(effectiveAutoLayoutMode);
       const chunks = [];
       for (let i = 0; i < prev.works.length; i += chunkSize) chunks.push(prev.works.slice(i, i + chunkSize));
       const autoPages = chunks.map((chunk) =>
-        buildAutoLayoutPageForWorks(chunk, prev.pageFormat, prev.theme?.pageMargins, dimMap, measuredBounds || undefined, autoLayoutMode),
+        buildAutoLayoutPageForWorks(
+          chunk,
+          prev.pageFormat,
+          prev.theme?.pageMargins,
+          dimMap,
+          undefined,
+          effectiveAutoLayoutMode,
+          prev.layoutAssist,
+          prev.theme,
+        ),
       );
       const frontPage = { ...front, margins: { ...(prev.theme?.pageMargins || front.margins) } };
       const backPage = { ...back, margins: { ...(prev.theme?.pageMargins || back.margins) } };
       const normalizedPreface = existingPreface
         ? { ...prefacePage, margins: { ...(prev.theme?.pageMargins || prefacePage.margins) } }
-        : normalizePageElementsToBounds(prefacePage, prev.pageFormat, boundMode);
-      const normalizedAutoPages = (autoPages.length ? autoPages : [createPage("page", "Pagina 1", prev.theme?.pageMargins)]).map((p) =>
-        normalizePageElementsToBounds(p, prev.pageFormat, boundMode),
-      );
+        : normalizePageElementsToBounds(prefacePage, prev.pageFormat, "margins");
+      const normalizedAutoPages = autoPages.length ? autoPages : [createPage("page", "Pagina 1", prev.theme?.pageMargins)];
       const pages = [frontPage, normalizedPreface, ...normalizedAutoPages, backPage];
 
       const nextSpecialPages = {
@@ -1545,7 +1654,7 @@ export default function App() {
     const page = allEditablePages.find((p) => p.id === pageId);
     if (!page || page.type === "summary") return;
     const placement = createPlacementForWork(workId, Math.max(0, x), Math.max(0, y));
-    patchPage(pageId, (p) => ({ ...p, placements: [...p.placements, placement] }));
+    patchPage(pageId, (p) => ({ ...p, placements: [...p.placements, { ...placement, zIndex: nextPlacementLayerZ(p) }] }));
     patchState((prev) => ({
       ...prev,
       activePageId: pageId,
@@ -1612,7 +1721,7 @@ export default function App() {
     if (current.length >= targetCount) return current.slice(0, targetCount);
     const pool = state.works.filter((w) => !current.some((p) => p.workId === w.id));
     for (const work of pool) {
-      current.push(createPlacementForWork(work.id, 20, 20));
+      current.push({ ...createPlacementForWork(work.id, 20, 20), zIndex: nextPlacementLayerZ({ placements: current }) });
       if (current.length >= targetCount) break;
     }
     return current;
@@ -1765,7 +1874,21 @@ export default function App() {
       }
       return {
         ...page,
-        placements: page.placements.map((el) => (el.id === elementId ? { ...el, ...patch } : el)),
+        placements: page.placements.map((el) => {
+          if (el.id !== elementId) return el;
+          const next = { ...el, ...patch };
+          const movesMainX = Object.prototype.hasOwnProperty.call(patch, "x") && !Object.prototype.hasOwnProperty.call(patch, "captionX");
+          const movesMainY = Object.prototype.hasOwnProperty.call(patch, "y") && !Object.prototype.hasOwnProperty.call(patch, "captionY");
+          if (movesMainX) {
+            const dx = (patch.x ?? el.x ?? 0) - (el.x ?? 0);
+            next.captionX = (el.captionX ?? el.x ?? 0) + dx;
+          }
+          if (movesMainY) {
+            const dy = (patch.y ?? el.y ?? 0) - (el.y ?? 0);
+            next.captionY = (el.captionY ?? ((el.y ?? 0) + (el.h ?? 0) + 8)) + dy;
+          }
+          return next;
+        }),
       };
     });
   }
@@ -1838,6 +1961,27 @@ export default function App() {
     return sel.kind === "text"
       ? page.textBlocks.find((t) => t.id === sel.elementId)
       : page.placements.find((p) => p.id === sel.elementId);
+  })();
+
+  const selectedPlacementWork = (() => {
+    const sel = state.selectedElement;
+    if (!sel || sel.kind !== "placement" || !selectedElementData) return null;
+    return state.works.find((w) => w.id === selectedElementData.workId) || null;
+  })();
+
+  const effectiveSelectedWork = selectedPlacementWork || selectedWork;
+
+  const activePageWorks = (() => {
+    if (!activeEditablePage) return [];
+    const seen = new Set();
+    return (activeEditablePage.placements || [])
+      .map((pl) => {
+        const work = state.works.find((w) => w.id === pl.workId);
+        if (!work || seen.has(work.id)) return null;
+        seen.add(work.id);
+        return { placementId: pl.id, work };
+      })
+      .filter(Boolean);
   })();
 
   function exportCatalogJson() {
@@ -2197,6 +2341,7 @@ export default function App() {
             <button
               className={`icon-btn ${autoLayoutMode === "hero" ? "active-toggle" : ""}`}
               onClick={() => {
+                autoLayoutModeRef.current = "hero";
                 setAutoLayoutMode("hero");
                 applyLayoutPreset("hero");
               }}
@@ -2208,6 +2353,7 @@ export default function App() {
             <button
               className={`icon-btn ${autoLayoutMode === "two-cols" ? "active-toggle" : ""}`}
               onClick={() => {
+                autoLayoutModeRef.current = "two-cols";
                 setAutoLayoutMode("two-cols");
                 applyLayoutPreset("two-cols");
               }}
@@ -2219,6 +2365,7 @@ export default function App() {
             <button
               className={`icon-btn ${autoLayoutMode === "grid4" ? "active-toggle" : ""}`}
               onClick={() => {
+                autoLayoutModeRef.current = "grid4";
                 setAutoLayoutMode("grid4");
                 applyLayoutPreset("grid4");
               }}
@@ -2407,11 +2554,43 @@ export default function App() {
         <aside className="side-panel">
           <PanelSection title="Pagina attiva">
             {activeEditablePage ? (
-              <PageInspector
-                page={activeEditablePage}
-                onChange={(patch) => patchPage(activeEditablePage.id, (p) => ({ ...p, ...patch }))}
-                onDeletePage={() => removeInnerPage(activeEditablePage.id)}
-              />
+              <>
+                <PageInspector
+                  page={activeEditablePage}
+                  onChange={(patch) => patchPage(activeEditablePage.id, (p) => ({ ...p, ...patch }))}
+                  onDeletePage={() => removeInnerPage(activeEditablePage.id)}
+                />
+                <div className="stack-fields">
+                  <label>Opere nella pagina</label>
+                  {activePageWorks.length ? (
+                    <div className="page-works-list">
+                      {activePageWorks.map(({ placementId, work }) => {
+                        const isPlacementSelected =
+                          state.selectedElement?.kind === "placement" && state.selectedElement?.elementId === placementId;
+                        return (
+                          <div key={placementId} className="page-work-row">
+                            <button
+                              className={`page-work-select ${isPlacementSelected ? "active" : ""}`}
+                              onClick={() =>
+                                patchState((prev) => ({
+                                  ...prev,
+                                  selectedWorkId: work.id,
+                                  selectedElement: { pageId: activeEditablePage.id, kind: "placement", elementId: placementId },
+                                }))
+                              }
+                            >
+                              {workLabel(work)}
+                            </button>
+                            <button className="small-btn" onClick={() => openEditWork(work)}>Modifica</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="muted">Nessuna opera in questa pagina.</p>
+                  )}
+                </div>
+              </>
             ) : (
               <p className="muted">Seleziona una pagina</p>
             )}
@@ -2432,13 +2611,17 @@ export default function App() {
           </PanelSection>
 
           <PanelSection title="Opera selezionata">
-            {selectedWork ? (
+            {effectiveSelectedWork ? (
               <div className="selected-work-card">
-                {selectedWork.imageUrl ? <img src={selectedWork.imageUrl} alt={workLabel(selectedWork)} /> : <div className="img-ph">Nessuna immagine</div>}
+                {effectiveSelectedWork.imageUrl ? (
+                  <img src={effectiveSelectedWork.imageUrl} alt={workLabel(effectiveSelectedWork)} />
+                ) : (
+                  <div className="img-ph">Nessuna immagine</div>
+                )}
                 <div>
-                  <strong>{workLabel(selectedWork)}</strong>
-                  <p>{selectedWork.author || "Autore non indicato"}</p>
-                  <button className="small-btn" onClick={() => openEditWork(selectedWork)}>Modifica opera</button>
+                  <strong>{workLabel(effectiveSelectedWork)}</strong>
+                  <p>{effectiveSelectedWork.author || "Autore non indicato"}</p>
+                  <button className="small-btn" onClick={() => openEditWork(effectiveSelectedWork)}>Modifica opera</button>
                 </div>
               </div>
             ) : (
@@ -3221,6 +3404,7 @@ function PageCanvas({
   const [dragOver, setDragOver] = useState(false);
   const [guides, setGuides] = useState([]);
   const [inlineEdit, setInlineEdit] = useState(null);
+  const [resizeLock, setResizeLock] = useState(null);
 
   function startDrag(e, kind, elementId, coords, handle = "main", size = null) {
     e.stopPropagation();
@@ -3234,6 +3418,7 @@ function PageCanvas({
         originY: e.clientY,
         start: coords,
         size,
+        lifted: false,
       };
       onSelectPage();
       onSelectElement({ pageId: page.id, kind, elementId });
@@ -3252,6 +3437,7 @@ function PageCanvas({
       originY: e.clientY,
       start: coords,
       size,
+      lifted: false,
     };
     onSelectPage();
     onSelectElement({ pageId: page.id, kind, elementId });
@@ -3260,7 +3446,9 @@ function PageCanvas({
   }
 
   function startResize(e, kind, elementId, size, handle = "main", anchor = { x: 0, y: 0 }) {
+    e.preventDefault();
     e.stopPropagation();
+    setResizeLock({ kind, elementId, handle });
     dragRef.current = {
       mode: "resize",
       kind,
@@ -3270,6 +3458,7 @@ function PageCanvas({
       originY: e.clientY,
       start: size,
       anchor,
+      lifted: false,
     };
     onSelectPage();
     onSelectElement({ pageId: page.id, kind, elementId });
@@ -3286,12 +3475,13 @@ function PageCanvas({
     const height = (innerRect?.height || 0) / scale;
     const constraintBox = getRenderedConstraintBox(page, width, height, layoutAssist?.boundMode || "margins");
     const altSnapOff = e.altKey;
+    const isPlacementFreeDrag = drag.kind === "placement" && drag.handle === "main" && drag.mode === "move" && !e.shiftKey;
     const isCaptionFreeDrag = drag.kind === "placement" && drag.handle === "caption" && drag.mode === "move" && !e.shiftKey;
     const gridSize = Math.max(4, layoutAssist?.gridSize || 12);
     const baseThreshold = layoutAssist?.snapThreshold ?? 8;
-    const threshold = isCaptionFreeDrag || altSnapOff ? 0 : Math.max(1, baseThreshold / scale);
-    const snapToGrid = isCaptionFreeDrag || altSnapOff ? false : !!layoutAssist?.snapToGrid;
-    const showGuides = isCaptionFreeDrag || altSnapOff ? false : !!layoutAssist?.showGuides;
+    const threshold = isPlacementFreeDrag || isCaptionFreeDrag || altSnapOff ? 0 : Math.max(1, baseThreshold / scale);
+    const snapToGrid = isPlacementFreeDrag || isCaptionFreeDrag || altSnapOff ? false : !!layoutAssist?.snapToGrid;
+    const showGuides = isPlacementFreeDrag || isCaptionFreeDrag || altSnapOff ? false : !!layoutAssist?.showGuides;
 
     const guideTargetsX = [
       0,
@@ -3328,6 +3518,7 @@ function PageCanvas({
 
     const dx = Math.round((e.clientX - drag.originX) / scale);
     const dy = Math.round((e.clientY - drag.originY) / scale);
+    if (!drag.lifted && (Math.abs(dx) > 1 || Math.abs(dy) > 1)) drag.lifted = true;
     if (drag.mode === "image-pan") {
       onMoveElement(page.id, "placement", drag.elementId, {
         imageOffsetX: Math.round((drag.start?.imageOffsetX ?? 0) + dx),
@@ -3356,25 +3547,28 @@ function PageCanvas({
       const draggedW = drag.size?.w ?? 0;
       const draggedH = drag.size?.h ?? 0;
 
+      const enableElementSnap = drag.kind === "placement" && drag.handle === "main" ? !!e.shiftKey : true;
       const elementTargetsX = [];
       const elementTargetsY = [];
-      for (const plc of page.placements || []) {
-        if (drag.kind === "placement" && plc.id === drag.elementId) continue;
-        elementTargetsX.push(plc.x, plc.x + plc.w / 2, plc.x + plc.w);
-        elementTargetsY.push(plc.y, plc.y + plc.h / 2, plc.y + plc.h);
-        if (plc.showCaption) {
-          const cx = plc.captionX ?? plc.x;
-          const cy = plc.captionY ?? plc.y + plc.h + 8;
-          const cw = plc.captionW ?? 220;
-          const ch = plc.captionH ?? 70;
-          elementTargetsX.push(cx, cx + cw / 2, cx + cw);
-          elementTargetsY.push(cy, cy + ch / 2, cy + ch);
+      if (enableElementSnap) {
+        for (const plc of page.placements || []) {
+          if (drag.kind === "placement" && plc.id === drag.elementId) continue;
+          elementTargetsX.push(plc.x, plc.x + plc.w / 2, plc.x + plc.w);
+          elementTargetsY.push(plc.y, plc.y + plc.h / 2, plc.y + plc.h);
+          if (plc.showCaption) {
+            const cx = plc.captionX ?? plc.x;
+            const cy = plc.captionY ?? plc.y + plc.h + 8;
+            const cw = plc.captionW ?? 220;
+            const ch = plc.captionH ?? 70;
+            elementTargetsX.push(cx, cx + cw / 2, cx + cw);
+            elementTargetsY.push(cy, cy + ch / 2, cy + ch);
+          }
         }
-      }
-      for (const txt of page.textBlocks || []) {
-        if (drag.kind === "text" && txt.id === drag.elementId) continue;
-        elementTargetsX.push(txt.x, txt.x + txt.w / 2, txt.x + txt.w);
-        elementTargetsY.push(txt.y, txt.y + txt.h / 2, txt.y + txt.h);
+        for (const txt of page.textBlocks || []) {
+          if (drag.kind === "text" && txt.id === drag.elementId) continue;
+          elementTargetsX.push(txt.x, txt.x + txt.w / 2, txt.x + txt.w);
+          elementTargetsY.push(txt.y, txt.y + txt.h / 2, txt.y + txt.h);
+        }
       }
 
       const snapMoveAxis = (base, size, targets, axis, max) => {
@@ -3413,6 +3607,7 @@ function PageCanvas({
 
   function onPointerUp() {
     dragRef.current = null;
+    setResizeLock(null);
     setGuides([]);
     window.removeEventListener("pointermove", onPointerMove);
     window.removeEventListener("pointerup", onPointerUp);
@@ -3556,7 +3751,13 @@ function PageCanvas({
           <SummaryPage page={page} theme={theme} />
         ) : (
           <>
-            {(page.placements || []).map((placement) => {
+            {[...(page.placements || [])]
+              .map((placement, orderIdx) => ({ placement, orderIdx }))
+              .sort(
+                (a, b) =>
+                  (Number(a.placement.zIndex) || 0) - (Number(b.placement.zIndex) || 0) || a.orderIdx - b.orderIdx,
+              )
+              .map(({ placement }) => {
               const work = works.find((w) => w.id === placement.workId);
               const isSelected =
                 selectedElement?.pageId === page.id &&
@@ -3564,8 +3765,14 @@ function PageCanvas({
                 selectedElement?.elementId === placement.id;
               if (!work) return null;
               return (
-                <div key={placement.id}>
+                <div key={placement.id} style={{ position: "absolute", inset: 0, pointerEvents: "none" }}>
                   {(() => {
+                    const layerZ = Number.isFinite(Number(placement.zIndex)) ? Number(placement.zIndex) : 100;
+                    const lockActive = !!resizeLock;
+                    const placementLockedOut =
+                      lockActive && !(resizeLock.kind === "placement" && resizeLock.elementId === placement.id && resizeLock.handle === "main");
+                    const captionLockedOut =
+                      lockActive && !(resizeLock.kind === "placement" && resizeLock.elementId === placement.id && resizeLock.handle === "caption");
                     const artBorderPx = borderPxFromPercent(placement.w, placement.borderWidthPct ?? 5, 0, Math.max(64, placement.w));
                     const capW = placement.captionW ?? 220;
                     const capBorderPx = borderPxFromPercent(capW, placement.captionBorderWidthPct ?? 5, 0, Math.max(48, capW));
@@ -3578,6 +3785,8 @@ function PageCanvas({
                       top: placement.y,
                       width: placement.w,
                       height: placement.h,
+                      zIndex: isSelected ? layerZ + 1000 : layerZ,
+                      pointerEvents: placementLockedOut ? "none" : "auto",
                       border: `${artBorderPx}px solid ${placement.borderColor || "#ffffff"}`,
                     }}
                     onPointerDown={(e) =>
@@ -3678,6 +3887,8 @@ function PageCanvas({
                         top: placement.captionY ?? placement.y + placement.h + 8,
                         width: placement.captionW ?? 220,
                         height: placement.captionH ?? 70,
+                        zIndex: isSelected ? layerZ + 1001 : layerZ + 1,
+                        pointerEvents: captionLockedOut ? "none" : "auto",
                         border: `${capBorderPx}px solid ${placement.captionBorderColor || "#ffffff"}`,
                       }}
                       onPointerDown={(e) =>
@@ -3774,6 +3985,8 @@ function PageCanvas({
               const isEditing = inlineEdit?.kind === "text" && inlineEdit?.id === txt.id;
               return (
                 (() => {
+                  const textLockedOut =
+                    !!resizeLock && !(resizeLock.kind === "text" && resizeLock.elementId === txt.id && resizeLock.handle === "main");
                   const txtBorderPx = borderPxFromPercent(txt.w, txt.borderWidthPct ?? 5, 0, Math.max(48, txt.w));
                   return (
                 <div
@@ -3784,6 +3997,8 @@ function PageCanvas({
                     top: txt.y,
                     width: txt.w,
                     height: txt.h,
+                    zIndex: isSelected ? 10 : 6,
+                    pointerEvents: textLockedOut ? "none" : "auto",
                     color: txt.color || theme.textColor,
                     fontSize: txt.fontSize || theme.bodyFontSize,
                     fontWeight: txt.fontWeight || theme.fontWeight,
