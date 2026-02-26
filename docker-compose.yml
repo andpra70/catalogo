@@ -1,0 +1,10 @@
+version: "3.9"
+
+services:
+  catalogo-opere:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "6063:6063"
+    restart: unless-stopped
