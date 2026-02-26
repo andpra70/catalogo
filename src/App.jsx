@@ -808,11 +808,29 @@ function borderPxFromPercent(sizePx, pct, minPx = 0, maxPx = 64) {
   return clampNum(Math.round((Math.max(0, sizePx || 0) * p) / 100), minPx, maxPx);
 }
 
+function applyThemeDefaultsToPlacement(placement, theme) {
+  if (!placement) return placement;
+  const borderPctDefault = theme?.defaultElementBorderPct;
+  const showCaptionDefault = theme?.autoShowCaptionDefault;
+  const borderColorDefault = theme?.defaultElementBorderColor || theme?.accentColor;
+  const captionBorderColorDefault = theme?.defaultCaptionBorderColor || theme?.accentColor || borderColorDefault;
+  return {
+    ...placement,
+    borderWidthPct: Number.isFinite(Number(borderPctDefault)) ? Number(borderPctDefault) : placement.borderWidthPct,
+    borderColor: borderColorDefault || placement.borderColor,
+    showCaption: typeof showCaptionDefault === "boolean" ? showCaptionDefault : placement.showCaption,
+    captionBorderWidthPct: Number.isFinite(Number(borderPctDefault)) ? Number(borderPctDefault) : placement.captionBorderWidthPct,
+    captionBorderColor: captionBorderColorDefault || placement.captionBorderColor,
+  };
+}
+
 function applyThemeAutoDefaultsToPage(page, theme) {
   if (!page) return page;
   const showCaptionDefault = theme?.autoShowCaptionDefault ?? true;
   const bgColorDefault = theme?.defaultPageBgColor || "#ffffff";
   const borderPctDefault = theme?.defaultElementBorderPct ?? 3;
+  const borderColorDefault = theme?.defaultElementBorderColor || theme?.accentColor;
+  const captionBorderColorDefault = theme?.defaultCaptionBorderColor || theme?.accentColor || borderColorDefault;
   return {
     ...page,
     bgColor: bgColorDefault,
@@ -820,7 +838,9 @@ function applyThemeAutoDefaultsToPage(page, theme) {
       ...p,
       showCaption: showCaptionDefault,
       borderWidthPct: borderPctDefault,
+      borderColor: borderColorDefault || p.borderColor,
       captionBorderWidthPct: borderPctDefault,
+      captionBorderColor: captionBorderColorDefault || p.captionBorderColor,
     })),
     textBlocks: (page.textBlocks || []).map((t) => ({
       ...t,
@@ -1480,7 +1500,7 @@ export default function App() {
 
   function addSelectedWorkToActivePage() {
     if (!activeEditablePage || activeEditablePage.type === "summary" || !selectedWork) return;
-    const placement = createPlacementForWork(selectedWork.id, 42, 42);
+    const placement = applyThemeDefaultsToPlacement(createPlacementForWork(selectedWork.id, 42, 42), state.theme);
     patchPage(activeEditablePage.id, (page) => ({
       ...page,
       placements: [...page.placements, { ...placement, zIndex: nextPlacementLayerZ(page) }],
@@ -1653,7 +1673,7 @@ export default function App() {
   function addWorkToPageAtPosition(pageId, workId, x, y) {
     const page = allEditablePages.find((p) => p.id === pageId);
     if (!page || page.type === "summary") return;
-    const placement = createPlacementForWork(workId, Math.max(0, x), Math.max(0, y));
+    const placement = applyThemeDefaultsToPlacement(createPlacementForWork(workId, Math.max(0, x), Math.max(0, y)), state.theme);
     patchPage(pageId, (p) => ({ ...p, placements: [...p.placements, { ...placement, zIndex: nextPlacementLayerZ(p) }] }));
     patchState((prev) => ({
       ...prev,
@@ -1721,7 +1741,10 @@ export default function App() {
     if (current.length >= targetCount) return current.slice(0, targetCount);
     const pool = state.works.filter((w) => !current.some((p) => p.workId === w.id));
     for (const work of pool) {
-      current.push({ ...createPlacementForWork(work.id, 20, 20), zIndex: nextPlacementLayerZ({ placements: current }) });
+      current.push({
+        ...applyThemeDefaultsToPlacement(createPlacementForWork(work.id, 20, 20), state.theme),
+        zIndex: nextPlacementLayerZ({ placements: current }),
+      });
       if (current.length >= targetCount) break;
     }
     return current;
@@ -2200,22 +2223,86 @@ export default function App() {
     }
   }
 
-  function printCatalogPdf() {
-    const fmt = getPageFormat(state.pageFormat);
-    const styleId = "catalog-print-page-size-style";
-    let styleEl = document.getElementById(styleId);
-    if (!styleEl) {
-      styleEl = document.createElement("style");
-      styleEl.id = styleId;
-      document.head.appendChild(styleEl);
+  async function printCatalogPdf() {
+    setTopbarMenuOpen(false);
+    const printCatalogEl = document.querySelector(".print-catalog");
+    const pageEls = Array.from(document.querySelectorAll(".print-page-sheet"));
+    const pageSourceEls = Array.from(document.querySelectorAll(".print-page-source"));
+    if (!printCatalogEl || !pageEls.length) {
+      window.alert("Nessuna pagina disponibile per l'esportazione PDF.");
+      return;
     }
-    styleEl.textContent = `@page { size: ${fmt.width}mm ${fmt.height}mm; margin: 0; }`;
-    const cleanup = () => {
-      window.removeEventListener("afterprint", cleanup);
-      styleEl?.remove();
-    };
-    window.addEventListener("afterprint", cleanup);
-    window.print();
+
+    const previousCatalogStyle = printCatalogEl.getAttribute("style");
+    const previousPageStyles = pageEls.map((el) => el.getAttribute("style"));
+    const previousPageSourceStyles = pageSourceEls.map((el) => el.getAttribute("style"));
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
+      const fmt = getPageFormat(state.pageFormat);
+      const orientation = fmt.width > fmt.height ? "landscape" : "portrait";
+      const targetWpx = Math.round(mmToCssPx(fmt.width));
+      const targetHpx = Math.round(mmToCssPx(fmt.height));
+      const pdf = new jsPDF({
+        orientation,
+        unit: "mm",
+        format: [fmt.width, fmt.height],
+        compress: true,
+      });
+      const scale = Math.min(3, Math.max(2, window.devicePixelRatio || 1));
+
+      printCatalogEl.setAttribute(
+        "style",
+        `${previousCatalogStyle || ""};display:block;position:fixed;left:-100000px;top:0;opacity:1;pointer-events:none;z-index:-1;`,
+      );
+      pageEls.forEach((el) => {
+        el.setAttribute(
+          "style",
+          `${el.getAttribute("style") || ""};display:block;position:relative;overflow:hidden;background:#ffffff;width:${targetWpx}px;height:${targetHpx}px;`,
+        );
+      });
+      pageSourceEls.forEach((el) => {
+        el.setAttribute(
+          "style",
+          `${el.getAttribute("style") || ""};position:absolute;left:0;top:0;transform-origin:top left;`,
+        );
+      });
+
+      for (let i = 0; i < pageEls.length; i += 1) {
+        const canvas = await html2canvas(pageEls[i], {
+          backgroundColor: "#ffffff",
+          scale,
+          useCORS: true,
+          logging: false,
+        });
+        const imgData = canvas.toDataURL("image/jpeg", 0.92);
+        if (i > 0) pdf.addPage([fmt.width, fmt.height], orientation);
+        pdf.addImage(imgData, "JPEG", 0, 0, fmt.width, fmt.height, undefined, "FAST");
+      }
+
+      const currentProject = savedProjects.find((p) => p.id === currentProjectId);
+      const baseName = (currentProject?.name || "catalogo-book")
+        .trim()
+        .replace(/[^\w\-]+/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "")
+        .toLowerCase();
+      pdf.save(`${baseName || "catalogo-book"}.pdf`);
+    } catch (err) {
+      window.alert(`Esportazione PDF fallita: ${err?.message || "errore sconosciuto"}`);
+    } finally {
+      if (previousCatalogStyle == null) printCatalogEl.removeAttribute("style");
+      else printCatalogEl.setAttribute("style", previousCatalogStyle);
+      pageEls.forEach((el, idx) => {
+        const prev = previousPageStyles[idx];
+        if (prev == null) el.removeAttribute("style");
+        else el.setAttribute("style", prev);
+      });
+      pageSourceEls.forEach((el, idx) => {
+        const prev = previousPageSourceStyles[idx];
+        if (prev == null) el.removeAttribute("style");
+        else el.setAttribute("style", prev);
+      });
+    }
   }
 
   function resetSummaryPagesOverrides() {
@@ -2273,9 +2360,9 @@ export default function App() {
                 <button onClick={() => openSaveThemeDialog("saveAs")}>Salva tema come...</button>
                 <button onClick={renameCurrentTheme} disabled={!currentThemeId}>Rinomina tema</button>
                 <button onClick={exportCatalogJson}>Esporta JSON</button>
+                <button onClick={printCatalogPdf}>Esporta PDF Book</button>
                 <button onClick={() => importJsonRef.current?.click()}>Importa JSON</button>
                 <button onClick={resetSummaryPagesOverrides}>Rigenera elenco opere</button>
-                <button onClick={printCatalogPdf}>Stampa / PDF Catalogo</button>
                 <div className="saved-projects-list">
                   <small>Progetti salvati</small>
                   {!savedProjects.length && <div className="saved-project-row empty">Nessun progetto</div>}
