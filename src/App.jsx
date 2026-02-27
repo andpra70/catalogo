@@ -9,6 +9,15 @@ const IMAGE_DB_NAME = "catalogo-opere-assets";
 const IMAGE_STORE_NAME = "images";
 const DEFAULT_WORK_DPI = 75;
 const MM_PER_INCH = 25.4;
+const DEFAULT_PREFACE_TITLE_MD = "# Prefazione";
+const DEFAULT_PREFACE_BODY_MD =
+  "Questo catalogo raccoglie una selezione di opere con una sequenza pensata per accompagnare la lettura tra immagini, ritmo di pagina e apparati testuali.\n\n## Linea curatoriale\n- relazione tra *materia* e luce\n- dialogo tra archivio e presente\n- attenzione al ritmo visivo di pagina\n\n> Questo testo e un template: sostituiscilo con la prefazione definitiva.";
+const DEFAULT_BACK_SUMMARY_MD =
+  "## Sintesi\nUna selezione di opere tra fotografia, pittura e immagini d'autore che esplora materia, luce e memoria in forma di catalogo editoriale.\n\n### Focus\n- sequenza narrativa per nuclei tematici\n- alternanza tra immagini e testi\n- attenzione al progetto grafico";
+const DEFAULT_BACK_BIO_MD =
+  "# Biografia Autore\n## Profilo\n**Andrea Rossi** (1987) vive e lavora a Milano.\nE un artista visivo che unisce *fotografia*, **pittura** e pratiche editoriali.\n\n### Ricerca\n- memoria e archivio\n- paesaggio contemporaneo\n- rapporto tra immagine e narrazione\n\n> Nota curatoriale: il suo lavoro alterna rigore documentario e visione poetica.\n\n## Percorso\n1. Formazione in arti visive e fotografia\n2. Prime mostre collettive in spazi indipendenti\n3. Sviluppo di progetti ibridi tra stampa e installazione";
+const DEFAULT_INTRO_CURATORIAL_MD =
+  "# Introduzione\nQuesto catalogo nasce come strumento di lettura e di lavoro: non solo una raccolta di immagini, ma un percorso tra opere, materiali e relazioni.\n\n## Intento editoriale\nLa sequenza delle pagine costruisce una progressione che alterna visione ravvicinata e visione d'insieme, con l'obiettivo di valorizzare ritmo, pause e contrasti.\n\n### Obiettivi\n- restituire il contesto di produzione delle opere\n- evidenziare continuita e differenze tra i cicli\n- offrire una consultazione chiara per studio, archivio e presentazione\n\n## Testo curatoriale\nLa selezione propone un attraversamento tematico tra **materia**, *luce* e memoria visiva. Ogni nucleo mette in dialogo immagini con scale differenti, affinita formali e scarti narrativi.\n\n### Chiavi di lettura\n1. rapporto tra superficie e profondita\n2. tensione tra documento e interpretazione\n3. costruzione di una grammatica visiva coerente\n\n> Nota: questo testo e un template di base. Personalizzalo con riferimenti puntuali a mostra, opere e cronologia.\n\nPer approfondimenti critici: [scheda progetto](https://example.com).";
 
 const FONT_OPTIONS = [
   { label: "Cormorant Garamond", value: "'Cormorant Garamond', serif" },
@@ -185,50 +194,76 @@ function renderMarkdownToHtml(md, { inline = false } = {}) {
   const source = String(md || "").replace(/\r\n/g, "\n").trim();
   if (!source) return "";
   if (inline) return renderMarkdownInline(source);
+  const lines = source.split("\n");
+  const out = [];
+  let i = 0;
+  const isHeading = (line) => /^\s*#{1,7}(?:\s+|$)/.test(line);
+  const isQuote = (line) => /^\s*>\s?/.test(line);
+  const isUl = (line) => /^\s*[-*+]\s+/.test(line);
+  const isOl = (line) => /^\s*\d+[.)]\s+/.test(line);
 
-  const blocks = source
-    .split(/\n{2,}/)
-    .map((b) => b.trim())
-    .filter(Boolean);
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) {
+      i += 1;
+      continue;
+    }
 
-  return blocks
-    .map((block) => {
-      const lines = block.split("\n");
-      const heading = block.match(/^(#{1,7})\s+(.+)$/);
-      if (heading) {
-        const level = heading[1].length;
-        if (level <= 6) return `<h${level}>${renderMarkdownInline(heading[2])}</h${level}>`;
-        return `<p class="md-h7">${renderMarkdownInline(heading[2])}</p>`;
+    const heading = line.match(/^\s*(#{1,7})(?:\s+|$)(.*?)\s*#*\s*$/);
+    if (heading) {
+      const level = heading[1].length;
+      const rawHeadingText = String(heading[2] || "").trim();
+      const content = rawHeadingText ? renderMarkdownInline(rawHeadingText) : "&nbsp;";
+      out.push(level <= 6 ? `<h${level}>${content}</h${level}>` : `<p class="md-h7">${content}</p>`);
+      i += 1;
+      continue;
+    }
+
+    if (isQuote(line)) {
+      const quoteLines = [];
+      while (i < lines.length && isQuote(lines[i])) {
+        quoteLines.push(lines[i].replace(/^\s*>\s?/, ""));
+        i += 1;
       }
-      const isQuote = lines.every((line) => /^\s*>\s?/.test(line));
-      if (isQuote) {
-        const quoteText = lines.map((line) => line.replace(/^\s*>\s?/, "")).join("\n");
-        return `<blockquote>${renderMarkdownInline(quoteText)}</blockquote>`;
+      out.push(`<blockquote>${renderMarkdownInline(quoteLines.join("\n"))}</blockquote>`);
+      continue;
+    }
+
+    if (isUl(line)) {
+      const items = [];
+      while (i < lines.length && isUl(lines[i])) {
+        const item = lines[i].replace(/^\s*[-*+]\s+/, "");
+        const task = item.match(/^\[( |x|X)\]\s+(.*)$/);
+        if (!task) items.push(`<li>${renderMarkdownInline(item)}</li>`);
+        else {
+          const checked = task[1].toLowerCase() === "x" ? " checked" : "";
+          items.push(`<li class="task-item"><input type="checkbox" disabled${checked} /> <span>${renderMarkdownInline(task[2])}</span></li>`);
+        }
+        i += 1;
       }
-      const isUl = lines.every((line) => /^\s*[-*+]\s+/.test(line));
-      if (isUl) {
-        const items = lines
-          .map((line) => line.replace(/^\s*[-*+]\s+/, ""))
-          .map((item) => {
-            const task = item.match(/^\[( |x|X)\]\s+(.*)$/);
-            if (!task) return `<li>${renderMarkdownInline(item)}</li>`;
-            const checked = task[1].toLowerCase() === "x" ? " checked" : "";
-            return `<li class="task-item"><input type="checkbox" disabled${checked} /> <span>${renderMarkdownInline(task[2])}</span></li>`;
-          })
-          .join("");
-        return `<ul>${items}</ul>`;
+      out.push(`<ul>${items.join("")}</ul>`);
+      continue;
+    }
+
+    if (isOl(line)) {
+      const items = [];
+      while (i < lines.length && isOl(lines[i])) {
+        items.push(`<li>${renderMarkdownInline(lines[i].replace(/^\s*\d+[.)]\s+/, ""))}</li>`);
+        i += 1;
       }
-      const isOl = lines.every((line) => /^\s*\d+[.)]\s+/.test(line));
-      if (isOl) {
-        const items = lines
-          .map((line) => line.replace(/^\s*\d+[.)]\s+/, ""))
-          .map((item) => `<li>${renderMarkdownInline(item)}</li>`)
-          .join("");
-        return `<ol>${items}</ol>`;
-      }
-      return `<p>${renderMarkdownInline(block)}</p>`;
-    })
-    .join("");
+      out.push(`<ol>${items.join("")}</ol>`);
+      continue;
+    }
+
+    const para = [];
+    while (i < lines.length && lines[i].trim() && !isHeading(lines[i]) && !isQuote(lines[i]) && !isUl(lines[i]) && !isOl(lines[i])) {
+      para.push(lines[i]);
+      i += 1;
+    }
+    out.push(`<p>${renderMarkdownInline(para.join("\n"))}</p>`);
+  }
+
+  return out.join("");
 }
 
 function normalizeWorkDpi(value) {
@@ -301,9 +336,11 @@ function createInsideBackCoverPage(marginsOverride) {
   return page;
 }
 
-function createPrefacePage(marginsOverride, bgColor = "#ffffff", borderPct = 3, pageFormatId = "a4-portrait") {
+function createPrefacePage(marginsOverride, bgColor = "#ffffff", borderPct = 3, pageFormatId = "a4-portrait", themeCfg = null) {
   const page = createPage("page", "Prefazione", marginsOverride);
   page.bgColor = bgColor;
+  const titleMd = themeCfg?.defaultPrefaceTitleMd || DEFAULT_PREFACE_TITLE_MD;
+  const bodyMd = themeCfg?.defaultPrefaceBodyMd || DEFAULT_PREFACE_BODY_MD;
   const area = getPageContentBounds(page, pageFormatId);
   const padX = Math.max(12, Math.round(area.width * 0.04));
   const topPad = Math.max(14, Math.round(area.height * 0.06));
@@ -320,7 +357,7 @@ function createPrefacePage(marginsOverride, bgColor = "#ffffff", borderPct = 3, 
   const bodyH = Math.max(80, area.height - bodyY - bottomPad);
   page.textBlocks = [
     {
-      ...createTextBlock("Prefazione"),
+      ...createTextBlock(titleMd),
       x: padX,
       y: topPad,
       w: titleW,
@@ -331,9 +368,7 @@ function createPrefacePage(marginsOverride, bgColor = "#ffffff", borderPct = 3, 
       borderWidthPct: borderPct,
     },
     {
-      ...createTextBlock(
-        "Questo catalogo raccoglie una selezione di opere con una sequenza pensata per accompagnare la lettura tra immagini, ritmo di pagina e apparati testuali. La prefazione può essere modificata, ampliata o sostituita con un testo curatoriale completo.",
-      ),
+      ...createTextBlock(bodyMd),
       x: padX,
       y: bodyY,
       w: bodyW,
@@ -376,9 +411,34 @@ function createRenderSpacerPage(id, title, marginsOverride) {
   };
 }
 
-function createDefaultState() {
+function createDefaultState(themeSeed = null) {
   const defaultMargins = { top: 28, right: 28, bottom: 38, left: 28 };
-  const coverFront = createPage("cover-front", "Copertina", defaultMargins);
+  const seed = themeSeed || {};
+  const theme = {
+    fontFamily: FONT_OPTIONS[2].value,
+    bodyFontSize: 15,
+    titleFontSize: 26,
+    fontWeight: 400,
+    textColor: "#111111",
+    accentColor: "#111111",
+    uiTint: "#f5f5f5",
+    paperShadow: "rgba(0, 0, 0, 0.10)",
+    autoShowCaptionDefault: true,
+    defaultPageBgColor: "#ffffff",
+    defaultElementBorderPct: 3,
+    defaultElementBorderColor: "#ffffff",
+    defaultPageNumberColor: "#6b614f",
+    defaultTextBgColor: "rgba(255, 255, 255, 0.42)",
+    defaultPrefaceTitleMd: DEFAULT_PREFACE_TITLE_MD,
+    defaultPrefaceBodyMd: DEFAULT_PREFACE_BODY_MD,
+    defaultBackSummaryMd: DEFAULT_BACK_SUMMARY_MD,
+    defaultBackBioMd: DEFAULT_BACK_BIO_MD,
+    defaultIntroCuratorialMd: DEFAULT_INTRO_CURATORIAL_MD,
+    ...seed,
+    pageMargins: { ...defaultMargins, ...(seed.pageMargins || {}) },
+  };
+  const projectMargins = theme.pageMargins || defaultMargins;
+  const coverFront = createPage("cover-front", "Copertina", projectMargins);
   coverFront.showPageNumber = false;
   coverFront.bgColor = "#ffffff";
   coverFront.textBlocks = [
@@ -406,17 +466,17 @@ function createDefaultState() {
     },
   ];
 
-  const innerPage = createPage("page", "Pagina 1", defaultMargins);
+  const innerPage = createPage("page", "Pagina 1", projectMargins);
   innerPage.pageNumber = 1;
-  innerPage.textBlocks = [{ ...createTextBlock("Introduzione o testo curatoriale"), x: 36, y: 36, w: 290, h: 120 }];
+  innerPage.textBlocks = [{ ...createTextBlock(theme.defaultIntroCuratorialMd || DEFAULT_INTRO_CURATORIAL_MD), x: 36, y: 36, w: 290, h: 120 }];
 
-  const coverBack = createPage("cover-back", "Retro copertina", defaultMargins);
+  const coverBack = createPage("cover-back", "Retro copertina", projectMargins);
   coverBack.showPageNumber = false;
   coverBack.bgColor = "#ffffff";
   coverBack.textBlocks = [
     {
       ...createTextBlock(
-        "Sintesi\nUna selezione di opere tra fotografia, pittura e immagini d'autore che esplora materia, luce e memoria in forma di catalogo editoriale.",
+        theme.defaultBackSummaryMd || DEFAULT_BACK_SUMMARY_MD,
       ),
       x: 30,
       y: 28,
@@ -428,7 +488,7 @@ function createDefaultState() {
     },
     {
       ...createTextBlock(
-        "# Biografia Autore\n## Profilo\n**Andrea Rossi** (1987) vive e lavora a Milano.\nE un artista visivo che unisce *fotografia*, **pittura** e pratiche editoriali.\n### Ricerca\n- memoria e archivio\n- paesaggio contemporaneo\n- rapporto tra immagine e narrazione\n> Nota curatoriale: il suo lavoro alterna rigore documentario e visione poetica.\n## Percorso\n1. Formazione in arti visive e fotografia\n2. Prime mostre collettive in spazi indipendenti\n3. Sviluppo di progetti ibridi tra stampa e installazione",
+        theme.defaultBackBioMd || DEFAULT_BACK_BIO_MD,
       ),
       x: 30,
       y: 132,
@@ -458,28 +518,12 @@ function createDefaultState() {
     currentSpread: 0,
     activePageId: innerPage.id,
     selectedElement: null,
-    theme: {
-      fontFamily: FONT_OPTIONS[2].value,
-      bodyFontSize: 15,
-      titleFontSize: 26,
-      fontWeight: 400,
-      textColor: "#111111",
-      accentColor: "#111111",
-      uiTint: "#f5f5f5",
-      paperShadow: "rgba(0, 0, 0, 0.10)",
-      pageMargins: defaultMargins,
-      autoShowCaptionDefault: true,
-      defaultPageBgColor: "#ffffff",
-      defaultElementBorderPct: 3,
-      defaultElementBorderColor: "#ffffff",
-      defaultPageNumberColor: "#6b614f",
-      defaultTextBgColor: "rgba(255, 255, 255, 0.42)",
-    },
+    theme,
     pageFormat: "a4-portrait",
     summaryPageEdits: {},
     specialPages: {
-      insideFront: createInsideFrontCoverPage(defaultMargins),
-      insideBack: createInsideBackCoverPage(defaultMargins),
+      insideFront: createInsideFrontCoverPage(projectMargins),
+      insideBack: createInsideBackCoverPage(projectMargins),
     },
     layoutAssist: {
       snapToGrid: true,
@@ -1864,6 +1908,7 @@ export default function App() {
         defaultBg,
         prev.theme?.defaultElementBorderPct ?? 3,
         prev.pageFormat,
+        prev.theme,
       );
       if (existingPreface) {
         prefacePage = {
@@ -2601,7 +2646,7 @@ export default function App() {
   function createNewProject() {
     if (!window.confirm("Creare un nuovo progetto vuoto? Le modifiche non salvate del progetto corrente andranno perse.")) return;
     skipNextPageFormatAdjustRef.current = true;
-    setState(createDefaultState());
+    setState(createDefaultState(state.theme));
     setCurrentProjectId(null);
     setBookView({ zoom: 1, panX: 0, panY: 0 });
     setTopbarMenuOpen(false);
@@ -3359,6 +3404,46 @@ function ThemePanel({ theme, onChange, onMarginsChange, onClose }) {
           type="color"
           value={theme.defaultElementBorderColor || "#ffffff"}
           onChange={(e) => onChange({ defaultElementBorderColor: e.target.value })}
+        />
+      </label>
+      <label>
+        Template Introduzione/Curatoriale (MD)
+        <textarea
+          rows={12}
+          value={theme.defaultIntroCuratorialMd || DEFAULT_INTRO_CURATORIAL_MD}
+          onChange={(e) => onChange({ defaultIntroCuratorialMd: e.target.value })}
+        />
+      </label>
+      <label>
+        Template Prefazione Titolo (MD)
+        <textarea
+          rows={3}
+          value={theme.defaultPrefaceTitleMd || DEFAULT_PREFACE_TITLE_MD}
+          onChange={(e) => onChange({ defaultPrefaceTitleMd: e.target.value })}
+        />
+      </label>
+      <label>
+        Template Prefazione Testo (MD)
+        <textarea
+          rows={8}
+          value={theme.defaultPrefaceBodyMd || DEFAULT_PREFACE_BODY_MD}
+          onChange={(e) => onChange({ defaultPrefaceBodyMd: e.target.value })}
+        />
+      </label>
+      <label>
+        Template Sintesi Retro (MD)
+        <textarea
+          rows={6}
+          value={theme.defaultBackSummaryMd || DEFAULT_BACK_SUMMARY_MD}
+          onChange={(e) => onChange({ defaultBackSummaryMd: e.target.value })}
+        />
+      </label>
+      <label>
+        Template Biografia Retro (MD)
+        <textarea
+          rows={10}
+          value={theme.defaultBackBioMd || DEFAULT_BACK_BIO_MD}
+          onChange={(e) => onChange({ defaultBackBioMd: e.target.value })}
         />
       </label>
       <div className="grid-2">

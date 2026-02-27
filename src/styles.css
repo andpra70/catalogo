@@ -754,6 +754,40 @@ button:disabled {
 .markdown-content h5,
 .markdown-content h6 {
   margin: 0 0 0.35em;
+  line-height: 1.12;
+  font-family: var(--theme-font, "Cormorant Garamond", serif);
+  color: inherit;
+}
+
+.markdown-content h1 {
+  font-size: var(--theme-title-size, 26px);
+  font-weight: 700;
+}
+
+.markdown-content h2 {
+  font-size: calc(var(--theme-title-size, 26px) * 0.88);
+  font-weight: 680;
+}
+
+.markdown-content h3 {
+  font-size: calc(var(--theme-title-size, 26px) * 0.78);
+  font-weight: 650;
+}
+
+.markdown-content h4 {
+  font-size: calc(var(--theme-title-size, 26px) * 0.68);
+  font-weight: 620;
+}
+
+.markdown-content h5 {
+  font-size: calc(var(--theme-title-size, 26px) * 0.58);
+  font-weight: 600;
+}
+
+.markdown-content h6 {
+  font-size: calc(var(--theme-title-size, 26px) * 0.5);
+  font-weight: 580;
+  letter-spacing: 0.01em;
 }
 
 .markdown-content p:last-child,
