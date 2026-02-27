@@ -945,6 +945,25 @@ textarea {
   display: block;
 }
 
+.color-alpha-field .color-alpha-row {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 44px;
+  gap: 8px;
+  align-items: center;
+}
+
+.color-alpha-field .color-alpha-row input[type="color"] {
+  width: 46px;
+  min-width: 46px;
+  height: 32px;
+  padding: 2px;
+}
+
+.color-alpha-field .color-alpha-row small {
+  text-align: right;
+  color: #666;
+}
+
 .inline-check {
   grid-template-columns: auto 1fr;
   align-items: center;
@@ -1365,10 +1384,6 @@ textarea {
 .print-catalog .page-inner.left,
 .print-catalog .page-inner.right {
   border: 0 !important;
-}
-
-.print-catalog .text-box {
-  background: transparent !important;
 }
 
 @media (max-width: 1180px) {

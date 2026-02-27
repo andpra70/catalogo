@@ -265,6 +265,7 @@ function createTextBlock(text = "Nuovo testo") {
     fontSize: 18,
     fontWeight: 500,
     color: "#1f1f1f",
+    bgColor: "rgba(255, 255, 255, 0.42)",
     align: "left",
     borderWidthPct: 5,
     borderColor: "#ffffff",
@@ -703,10 +704,13 @@ function summaryPagesFromWorks(
     };
     const listText =
       chunk
-        .map((work) => {
+        .map((work, rowIdx) => {
           const pageNo = workPageMap.get(work.id);
-          const parts = [workLabel(work), work.author || "-", work.year || "-"].filter(Boolean);
-          return `${parts[0]} - ${parts[1]} - ${parts[2]}  |  pag. ${pageNo ?? "-"}`;
+          const title = workLabel(work);
+          const author = work.author?.trim() || "n/d";
+          const year = work.year?.trim() || "n/d";
+          const pageLabel = pageNo ?? "-";
+          return `${idx * chunkSize + rowIdx + 1}. **${title}** — *${author}* — anno: ${year} — **pag. ${pageLabel}**`;
         })
         .join("\n") || "Nessuna opera inserita.";
     const listBlock = {
@@ -1038,6 +1042,7 @@ function applyThemeAutoDefaultsToPage(page, theme) {
   const borderPctDefault = theme?.defaultElementBorderPct ?? 3;
   const borderColorDefault = theme?.defaultElementBorderColor || theme?.accentColor;
   const captionBorderColorDefault = theme?.defaultCaptionBorderColor || theme?.accentColor || borderColorDefault;
+  const textBgDefault = theme?.defaultTextBgColor || "rgba(255, 255, 255, 0.42)";
   return {
     ...page,
     bgColor: bgColorDefault,
@@ -1052,6 +1057,7 @@ function applyThemeAutoDefaultsToPage(page, theme) {
     textBlocks: (page.textBlocks || []).map((t) => ({
       ...t,
       borderWidthPct: t.borderWidthPct ?? borderPctDefault,
+      bgColor: t.bgColor ?? textBgDefault,
     })),
   };
 }
@@ -1438,7 +1444,8 @@ export default function App() {
       const hasBorderPatch = Object.prototype.hasOwnProperty.call(patch, "defaultElementBorderPct");
       const hasBorderColorPatch = Object.prototype.hasOwnProperty.call(patch, "defaultElementBorderColor");
       const hasPageNumberColorPatch = Object.prototype.hasOwnProperty.call(patch, "defaultPageNumberColor");
-      if (!hasBgPatch && !hasBorderPatch && !hasBorderColorPatch && !hasPageNumberColorPatch) {
+      const hasTextBgPatch = Object.prototype.hasOwnProperty.call(patch, "defaultTextBgColor");
+      if (!hasBgPatch && !hasBorderPatch && !hasBorderColorPatch && !hasPageNumberColorPatch && !hasTextBgPatch) {
         return { ...prev, theme: nextTheme };
       }
       const nextBg = patch.defaultPageBgColor || prev.theme?.defaultPageBgColor || "#ffffff";
@@ -1447,6 +1454,7 @@ export default function App() {
         : prev.theme?.defaultElementBorderPct ?? 3;
       const nextBorderColor = patch.defaultElementBorderColor || prev.theme?.defaultElementBorderColor || "#ffffff";
       const nextPageNumberColor = patch.defaultPageNumberColor || prev.theme?.defaultPageNumberColor || "#6b614f";
+      const nextTextBgColor = patch.defaultTextBgColor || prev.theme?.defaultTextBgColor || "rgba(255, 255, 255, 0.42)";
       const patchPageElementsBorders = (page) => ({
         ...page,
         bgColor: hasBgPatch ? nextBg : page.bgColor,
@@ -1462,6 +1470,7 @@ export default function App() {
           ...tx,
           borderWidthPct: hasBorderPatch ? nextBorderPct : tx.borderWidthPct,
           borderColor: hasBorderColorPatch ? nextBorderColor : tx.borderColor,
+          bgColor: hasTextBgPatch ? nextTextBgColor : tx.bgColor,
         })),
       });
       return {
@@ -1710,6 +1719,7 @@ export default function App() {
     const targetW = Math.max(120, Math.round(bounds.width * 0.9));
     const borderPx = borderPxFromPercent(targetW, block.borderWidthPct ?? 5, 0, Math.max(48, targetW));
     const minH = Math.ceil((block.fontSize || state.theme.bodyFontSize || 16) * 1.25 + borderPx * 2 + 8);
+    block.bgColor = state.theme?.defaultTextBgColor || block.bgColor || "rgba(255, 255, 255, 0.42)";
     block.w = targetW;
     block.h = Math.max(block.h || 0, minH);
     block.x = Math.max(0, Math.round((bounds.width - block.w) / 2));
@@ -3314,6 +3324,12 @@ function ThemePanel({ theme, onChange, onMarginsChange, onClose }) {
           onChange={(e) => onChange({ defaultPageBgColor: e.target.value })}
         />
       </label>
+      <ColorAlphaField
+        label="Sfondo rettangoli testo default"
+        value={theme.defaultTextBgColor || "rgba(255, 255, 255, 0.42)"}
+        fallback="rgba(255, 255, 255, 0.42)"
+        onChange={(color) => onChange({ defaultTextBgColor: color })}
+      />
       <label>
         Colore numero pagina default
         <input
@@ -3418,6 +3434,12 @@ function ElementInspector({ kind, data, onChange }) {
           Colore
           <input type="color" value={data.color || "#222222"} onChange={(e) => onChange({ color: e.target.value })} />
         </label>
+        <ColorAlphaField
+          label="Sfondo testo"
+          value={data.bgColor || "rgba(255, 255, 255, 0.42)"}
+          fallback="rgba(255, 255, 255, 0.42)"
+          onChange={(color) => onChange({ bgColor: color })}
+        />
         <label>
           Allineamento
           <select value={data.align || "left"} onChange={(e) => onChange({ align: e.target.value })}>
@@ -3478,6 +3500,29 @@ function RangeField({ label, min, max, value, onChange, step = 1 }) {
     <label className="range-field">
       <span>{label}: {value}</span>
       <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+    </label>
+  );
+}
+
+function ColorAlphaField({ label, value, fallback = "rgba(255, 255, 255, 0.42)", onChange }) {
+  const parsed = colorToHexAlpha(value, fallback);
+  const setHex = (hex) => {
+    const rgba = parseColorToRgbaParts(hex) || parseColorToRgbaParts(parsed.hex) || { r: 255, g: 255, b: 255, a: parsed.alpha };
+    onChange?.(rgbaPartsToCss({ ...rgba, a: parsed.alpha }));
+  };
+  const setAlphaPct = (pct) => {
+    const alpha = clamp01((Number(pct) || 0) / 100, parsed.alpha);
+    const rgba = parseColorToRgbaParts(parsed.hex) || { r: 255, g: 255, b: 255, a: alpha };
+    onChange?.(rgbaPartsToCss({ ...rgba, a: alpha }));
+  };
+  return (
+    <label className="color-alpha-field">
+      <span>{label}</span>
+      <div className="color-alpha-row">
+        <input type="color" value={parsed.hex} onChange={(e) => setHex(e.target.value)} />
+        <input type="range" min={0} max={100} step={1} value={Math.round(parsed.alpha * 100)} onChange={(e) => setAlphaPct(e.target.value)} />
+        <small>{Math.round(parsed.alpha * 100)}%</small>
+      </div>
     </label>
   );
 }
@@ -4483,6 +4528,7 @@ function PageCanvas({
                     zIndex: isSelected ? 10 : 6,
                     pointerEvents: textLockedOut ? "none" : "auto",
                     color: txt.color || theme.textColor,
+                    background: txt.bgColor || theme.defaultTextBgColor || "rgba(255, 255, 255, 0.42)",
                     fontSize: txt.fontSize || theme.bodyFontSize,
                     fontWeight: txt.fontWeight || theme.fontWeight,
                     textAlign: txt.align || "left",
