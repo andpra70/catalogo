@@ -7,6 +7,8 @@ const THEMES_INDEX_KEY = "catalogo-opere-themes-index-v1";
 const THEME_STORAGE_PREFIX = "catalogo-opere-theme:";
 const IMAGE_DB_NAME = "catalogo-opere-assets";
 const IMAGE_STORE_NAME = "images";
+const DEFAULT_WORK_DPI = 75;
+const MM_PER_INCH = 25.4;
 
 const FONT_OPTIONS = [
   { label: "Cormorant Garamond", value: "'Cormorant Garamond', serif" },
@@ -39,6 +41,7 @@ const WORK_FIELDS = [
   ["type", "Tipo"],
   ["technique", "Tecnica"],
   ["dimensions", "Dimensioni"],
+  ["dpi", "DPI"],
   ["inventory", "Inventario"],
   ["location", "Collocazione"],
   ["notes", "Note"],
@@ -72,6 +75,127 @@ function uid(prefix = "id") {
 
 function mmToCssPx(mm) {
   return (Number(mm) * 96) / 25.4;
+}
+
+function slugifyFileBaseName(value, fallback = "catalogo-book") {
+  const raw = String(value || "").trim();
+  const base = (raw || fallback)
+    .replace(/[^\w\-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase();
+  return base || fallback;
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function isSafeLinkUrl(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return false;
+  return /^(https?:\/\/|mailto:|tel:|\/(?!\/)|#)/i.test(raw);
+}
+
+function renderMarkdownInline(md) {
+  const codeTokens = [];
+  let text = escapeHtml(String(md || "")).replace(/\r\n/g, "\n");
+
+  text = text.replace(/`([^`\n]+)`/g, (_, code) => {
+    const token = `@@CODE_${codeTokens.length}@@`;
+    codeTokens.push(`<code>${escapeHtml(code)}</code>`);
+    return token;
+  });
+
+  text = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, url) => {
+    if (!isSafeLinkUrl(url)) return escapeHtml(label);
+    return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
+  });
+  text = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  text = text.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  text = text.replace(/\n/g, "<br/>");
+
+  codeTokens.forEach((html, idx) => {
+    text = text.replace(`@@CODE_${idx}@@`, html);
+  });
+  return text;
+}
+
+function renderMarkdownToHtml(md, { inline = false } = {}) {
+  const source = String(md || "").replace(/\r\n/g, "\n").trim();
+  if (!source) return "";
+  if (inline) return renderMarkdownInline(source);
+
+  const blocks = source
+    .split(/\n{2,}/)
+    .map((b) => b.trim())
+    .filter(Boolean);
+
+  return blocks
+    .map((block) => {
+      const lines = block.split("\n");
+      const heading = block.match(/^(#{1,7})\s+(.+)$/);
+      if (heading) {
+        const level = heading[1].length;
+        if (level <= 6) return `<h${level}>${renderMarkdownInline(heading[2])}</h${level}>`;
+        return `<p class="md-h7">${renderMarkdownInline(heading[2])}</p>`;
+      }
+      const isQuote = lines.every((line) => /^\s*>\s?/.test(line));
+      if (isQuote) {
+        const quoteText = lines.map((line) => line.replace(/^\s*>\s?/, "")).join("\n");
+        return `<blockquote>${renderMarkdownInline(quoteText)}</blockquote>`;
+      }
+      const isUl = lines.every((line) => /^\s*[-*+]\s+/.test(line));
+      if (isUl) {
+        const items = lines
+          .map((line) => line.replace(/^\s*[-*+]\s+/, ""))
+          .map((item) => {
+            const task = item.match(/^\[( |x|X)\]\s+(.*)$/);
+            if (!task) return `<li>${renderMarkdownInline(item)}</li>`;
+            const checked = task[1].toLowerCase() === "x" ? " checked" : "";
+            return `<li class="task-item"><input type="checkbox" disabled${checked} /> <span>${renderMarkdownInline(task[2])}</span></li>`;
+          })
+          .join("");
+        return `<ul>${items}</ul>`;
+      }
+      const isOl = lines.every((line) => /^\s*\d+[.)]\s+/.test(line));
+      if (isOl) {
+        const items = lines
+          .map((line) => line.replace(/^\s*\d+[.)]\s+/, ""))
+          .map((item) => `<li>${renderMarkdownInline(item)}</li>`)
+          .join("");
+        return `<ol>${items}</ol>`;
+      }
+      return `<p>${renderMarkdownInline(block)}</p>`;
+    })
+    .join("");
+}
+
+function normalizeWorkDpi(value) {
+  const dpi = Number(value);
+  if (Number.isFinite(dpi) && dpi > 0) return Math.round(dpi);
+  return DEFAULT_WORK_DPI;
+}
+
+function normalizeWorkData(work) {
+  return { ...(work || {}), dpi: normalizeWorkDpi(work?.dpi) };
+}
+
+function readImagePhysicalSizeMm(imageDimensions, dpiValue) {
+  const widthPx = Number(imageDimensions?.width);
+  const heightPx = Number(imageDimensions?.height);
+  const dpi = normalizeWorkDpi(dpiValue);
+  if (!(widthPx > 0 && heightPx > 0)) return null;
+  return {
+    width: (widthPx * MM_PER_INCH) / dpi,
+    height: (heightPx * MM_PER_INCH) / dpi,
+    aspect: widthPx / heightPx,
+  };
 }
 
 function createTextBlock(text = "Nuovo testo") {
@@ -248,12 +372,12 @@ function createDefaultState() {
     },
     {
       ...createTextBlock(
-        "Biografia autore (esempio)\nAndrea Rossi (1987) vive e lavora a Milano. La sua ricerca attraversa fotografia e pratiche miste, con attenzione al rapporto tra archivio, paesaggio e costruzione della memoria visiva. Ha esposto in mostre collettive e progetti indipendenti in Italia e all'estero.",
+        "# Biografia Autore\n## Profilo\n**Andrea Rossi** (1987) vive e lavora a Milano.\nE un artista visivo che unisce *fotografia*, **pittura** e pratiche editoriali.\n### Ricerca\n- memoria e archivio\n- paesaggio contemporaneo\n- rapporto tra immagine e narrazione\n> Nota curatoriale: il suo lavoro alterna rigore documentario e visione poetica.\n## Percorso\n1. Formazione in arti visive e fotografia\n2. Prime mostre collettive in spazi indipendenti\n3. Sviluppo di progetti ibridi tra stampa e installazione",
       ),
       x: 30,
-      y: 188,
+      y: 132,
       w: 300,
-      h: 118,
+      h: 116,
       fontSize: 12,
       fontWeight: 400,
       align: "left",
@@ -261,7 +385,7 @@ function createDefaultState() {
     {
       ...createTextBlock("Edizione 1/200\nCodice edizione: CAT-2026-001"),
       x: 30,
-      y: 204,
+      y: 258,
       w: 300,
       h: 42,
       fontSize: 11,
@@ -271,6 +395,7 @@ function createDefaultState() {
   ];
 
   return {
+    projectTitle: "Progetto",
     works: [],
     selectedWorkId: null,
     pages: [coverFront, innerPage, coverBack],
@@ -290,6 +415,8 @@ function createDefaultState() {
       autoShowCaptionDefault: true,
       defaultPageBgColor: "#ffffff",
       defaultElementBorderPct: 3,
+      defaultElementBorderColor: "#ffffff",
+      defaultPageNumberColor: "#6b614f",
     },
     pageFormat: "a4-portrait",
     summaryPageEdits: {},
@@ -310,7 +437,7 @@ function createDefaultState() {
 }
 
 function sanitizeWorkForStorage(work) {
-  const { imageUrl, _imageFile, ...rest } = work || {};
+  const { imageUrl, _imageFile, ...rest } = normalizeWorkData(work);
   return { ...rest };
 }
 
@@ -325,7 +452,7 @@ function sanitizeStateForExport(state) {
   return {
     ...state,
     works: (state.works || []).map((work) => {
-      const { _imageFile, ...rest } = work || {};
+      const { _imageFile, ...rest } = normalizeWorkData(work);
       return rest;
     }),
   };
@@ -471,7 +598,7 @@ function loadState() {
         ...p,
         margins: { ...theme.pageMargins, ...(p?.margins || {}) },
       })),
-      works: (parsed.works || []).map((w) => ({ ...w, imageUrl: "" })),
+      works: (parsed.works || []).map((w) => ({ ...normalizeWorkData(w), imageUrl: "" })),
     };
   } catch {
     return createDefaultState();
@@ -487,14 +614,6 @@ function defaultPlacementCaption(placement, work) {
   return [workLabel(work), [work?.author, work?.year].filter(Boolean).join(", ")].filter(Boolean).join("\n");
 }
 
-function captionPartsFromText(text) {
-  const lines = String(text || "").split("\n");
-  return {
-    title: lines[0] || "",
-    meta: lines.slice(1).join("\n"),
-  };
-}
-
 function summaryPagesFromWorks(
   works,
   marginsOverride,
@@ -502,6 +621,7 @@ function summaryPagesFromWorks(
   summaryPageEdits = {},
   defaultBgColor = "#ffffff",
   defaultBorderPct = 3,
+  defaultPageNumberColor = "#6b614f",
   pageFormatId = "a4-portrait",
 ) {
   const chunkSize = 14;
@@ -551,18 +671,27 @@ function summaryPagesFromWorks(
       bgColor: defaultBgColor || "#ffffff",
       pageNumber: 1,
       showPageNumber: true,
-      pageNumberColor: "#6b614f",
+      pageNumberColor: defaultPageNumberColor || "#6b614f",
       margins: marginsOverride || { top: 28, right: 26, bottom: 38, left: 26 },
       textBlocks: [titleBlock, listBlock],
       placements: [],
     };
     const edit = summaryPageEdits?.[generated.id];
     if (!edit) return generated;
+    const editedBlocks = Array.isArray(edit.textBlocks) ? edit.textBlocks : generated.textBlocks;
+    const mergedTextBlocks = [
+      editedBlocks[0] ? { ...editedBlocks[0] } : generated.textBlocks[0],
+      {
+        ...(editedBlocks[1] ? { ...editedBlocks[1] } : generated.textBlocks[1]),
+        text: generated.textBlocks[1]?.text || "",
+      },
+      ...editedBlocks.slice(2),
+    ];
     return {
       ...generated,
       ...edit,
       margins: { ...(generated.margins || {}), ...(edit.margins || {}) },
-      textBlocks: edit.textBlocks || generated.textBlocks,
+      textBlocks: mergedTextBlocks,
       placements: edit.placements || generated.placements,
     };
   });
@@ -693,6 +822,7 @@ function cloneWorkDraft(work) {
     type: "",
     technique: "",
     dimensions: "",
+    dpi: DEFAULT_WORK_DPI,
     inventory: "",
     location: "",
     notes: "",
@@ -730,17 +860,23 @@ function nextPlacementLayerZ(page) {
   return (values.length ? Math.max(...values) : 90) + 10;
 }
 
-function createAutoWorkPage(work, pageFormatId) {
+function createAutoWorkPage(work, pageFormatId, imageDimensions) {
   const page = createPage("page", workLabel(work));
   page.bgColor = "#fbfbfb";
   const format = getPageFormat(pageFormatId);
   const margins = page.margins;
   const innerW = Math.max(220, format.width - (margins.left + margins.right));
   const innerH = Math.max(260, format.height - (margins.top + margins.bottom));
-  const placementW = Math.min(220, Math.max(140, Math.round(innerW * 0.68)));
-  const placementH = Math.round(placementW * 1.12);
   const captionH = 50;
   const gap = 8;
+  const maxImageW = Math.max(60, innerW);
+  const maxImageH = Math.max(60, innerH - captionH - gap);
+  const hasImageSize = Number(imageDimensions?.width) > 0 && Number(imageDimensions?.height) > 0;
+  const fitted = hasImageSize
+    ? fitImageMmToBox(work, imageDimensions, maxImageW, maxImageH, Number(imageDimensions.width) / Math.max(1, Number(imageDimensions.height)))
+    : null;
+  const placementW = fitted?.w ?? Math.min(220, Math.max(140, Math.round(innerW * 0.68)));
+  const placementH = fitted?.h ?? Math.round(placementW * 1.12);
   const x = Math.max(0, Math.round((innerW - placementW) / 2));
   const y = Math.max(0, Math.round((innerH - placementH - captionH - gap) / 2));
   const placement = createPlacementForWork(work.id, x, y);
@@ -774,16 +910,9 @@ function createAutoWorkPageFromImageAspect(work, pageFormatId, aspectRatio, boun
   const maxImageW = Math.max(60, areaW);
   const maxImageH = Math.max(60, areaH - captionH - captionGap);
 
-  // Fit massimo preservando aspect ratio dentro l'area disponibile sopra la didascalia.
-  let w = maxImageW;
-  let h = w / safeAspect;
-  if (h > maxImageH) {
-    h = maxImageH;
-    w = h * safeAspect;
-  }
-
-  w = clampNum(Math.round(w), 60, maxImageW);
-  h = clampNum(Math.round(h), 60, maxImageH);
+  const fitted = fitImageMmToBox(work, null, maxImageW, maxImageH, safeAspect);
+  const w = clampNum(Math.round(fitted.w), 60, maxImageW);
+  const h = clampNum(Math.round(fitted.h), 60, maxImageH);
 
   const x = Math.round((areaW - w) / 2);
   const y = Math.max(6, Math.round((areaH - h - captionH - captionGap) / 2));
@@ -801,6 +930,28 @@ function createAutoWorkPageFromImageAspect(work, pageFormatId, aspectRatio, boun
 
 function clampNum(value, min, max) {
   return Math.max(min, Math.min(max, Number.isFinite(value) ? value : min));
+}
+
+function fitImageMmToBox(work, imageDimensions, maxW, maxH, fallbackAspect = 1) {
+  const safeMaxW = Math.max(1, Number(maxW) || 1);
+  const safeMaxH = Math.max(1, Number(maxH) || 1);
+  const physical = readImagePhysicalSizeMm(imageDimensions, work?.dpi);
+  const safeAspect = Number.isFinite(physical?.aspect) && physical.aspect > 0 ? physical.aspect : Math.max(0.01, Number(fallbackAspect) || 1);
+
+  let w = Number.isFinite(physical?.width) && physical.width > 0 ? physical.width : safeMaxW;
+  let h = Number.isFinite(physical?.height) && physical.height > 0 ? physical.height : w / safeAspect;
+  if (!(w > 0) || !(h > 0)) {
+    w = safeMaxW;
+    h = w / safeAspect;
+  }
+
+  const downScale = Math.min(1, safeMaxW / w, safeMaxH / h);
+  w *= downScale;
+  h *= downScale;
+  return {
+    w: clampNum(Math.round(w), 1, safeMaxW),
+    h: clampNum(Math.round(h), 1, safeMaxH),
+  };
 }
 
 function borderPxFromPercent(sizePx, pct, minPx = 0, maxPx = 64) {
@@ -1149,6 +1300,7 @@ export default function App() {
     state.summaryPageEdits,
     state.theme.defaultPageBgColor,
     state.theme.defaultElementBorderPct,
+    state.theme.defaultPageNumberColor,
     state.pageFormat,
   );
   const allEditablePages = [...editablePages, ...editableSpecialPages, ...summaryPages];
@@ -1227,24 +1379,32 @@ export default function App() {
       const nextTheme = { ...prev.theme, ...patch };
       const hasBgPatch = Object.prototype.hasOwnProperty.call(patch, "defaultPageBgColor");
       const hasBorderPatch = Object.prototype.hasOwnProperty.call(patch, "defaultElementBorderPct");
-      if (!hasBgPatch && !hasBorderPatch) {
+      const hasBorderColorPatch = Object.prototype.hasOwnProperty.call(patch, "defaultElementBorderColor");
+      const hasPageNumberColorPatch = Object.prototype.hasOwnProperty.call(patch, "defaultPageNumberColor");
+      if (!hasBgPatch && !hasBorderPatch && !hasBorderColorPatch && !hasPageNumberColorPatch) {
         return { ...prev, theme: nextTheme };
       }
       const nextBg = patch.defaultPageBgColor || prev.theme?.defaultPageBgColor || "#ffffff";
       const nextBorderPct = Number.isFinite(Number(patch.defaultElementBorderPct))
         ? Number(patch.defaultElementBorderPct)
         : prev.theme?.defaultElementBorderPct ?? 3;
+      const nextBorderColor = patch.defaultElementBorderColor || prev.theme?.defaultElementBorderColor || "#ffffff";
+      const nextPageNumberColor = patch.defaultPageNumberColor || prev.theme?.defaultPageNumberColor || "#6b614f";
       const patchPageElementsBorders = (page) => ({
         ...page,
         bgColor: hasBgPatch ? nextBg : page.bgColor,
+        pageNumberColor: hasPageNumberColorPatch ? nextPageNumberColor : page.pageNumberColor,
         placements: (page.placements || []).map((pl) => ({
           ...pl,
           borderWidthPct: hasBorderPatch ? nextBorderPct : pl.borderWidthPct,
+          borderColor: hasBorderColorPatch ? nextBorderColor : pl.borderColor,
           captionBorderWidthPct: hasBorderPatch ? nextBorderPct : pl.captionBorderWidthPct,
+          captionBorderColor: hasBorderColorPatch ? nextBorderColor : pl.captionBorderColor,
         })),
         textBlocks: (page.textBlocks || []).map((tx) => ({
           ...tx,
           borderWidthPct: hasBorderPatch ? nextBorderPct : tx.borderWidthPct,
+          borderColor: hasBorderColorPatch ? nextBorderColor : tx.borderColor,
         })),
       });
       return {
@@ -1318,7 +1478,8 @@ export default function App() {
   }
 
   async function saveWork(draft) {
-    const incoming = { ...draft };
+    const incoming = normalizeWorkData({ ...draft });
+    const imageDimensions = await readImageDimensions(incoming.imageUrl);
     const existing = state.works.find((w) => w.id === incoming.id);
     if (incoming._imageFile && incoming.imageUrl) {
       const nextImageId = incoming.imageId || uid("img");
@@ -1336,7 +1497,7 @@ export default function App() {
       if (exists) {
         return { ...prev, works, selectedWorkId: incoming.id };
       }
-      let autoPage = createAutoWorkPage(incoming, prev.pageFormat);
+      let autoPage = createAutoWorkPage(incoming, prev.pageFormat, imageDimensions || null);
       autoPage = applyThemeAutoDefaultsToPage(autoPage, prev.theme);
       autoPage.margins = { ...(prev.theme?.pageMargins || autoPage.margins) };
       const nextPages = [...prev.pages];
@@ -1382,15 +1543,16 @@ export default function App() {
       const imageFile = imageFiles[0];
       const imageUrl = await readImageFile(imageFile);
       const titleFromName = imageFile.name.replace(/\.[^.]+$/, "");
-      openCreateWork({ title: titleFromName, imageUrl, _imageFile: imageFile });
+      openCreateWork({ title: titleFromName, imageUrl, _imageFile: imageFile, dpi: DEFAULT_WORK_DPI });
       return;
     }
 
     const importedWorks = [];
     for (const file of imageFiles) {
       const imageUrl = await readImageFile(file);
+      const imageDimensions = await readImageDimensions(imageUrl);
       const work = {
-        ...cloneWorkDraft(),
+        ...normalizeWorkData(cloneWorkDraft()),
         title: file.name.replace(/\.[^.]+$/, ""),
         imageUrl,
         imageId: uid("img"),
@@ -1400,24 +1562,25 @@ export default function App() {
       } catch {
         // fallback: keep in-memory imageUrl even if IndexedDB fails
       }
-      importedWorks.push(work);
+      importedWorks.push({ work, imageDimensions });
     }
     if (!importedWorks.length) return;
 
     patchState((prev) => {
-      const autoPages = importedWorks.map((work) => {
-        let page = createAutoWorkPage(work, prev.pageFormat);
+      const autoPages = importedWorks.map(({ work, imageDimensions }) => {
+        let page = createAutoWorkPage(work, prev.pageFormat, imageDimensions);
         page = applyThemeAutoDefaultsToPage(page, prev.theme);
         page.margins = { ...(prev.theme?.pageMargins || page.margins) };
         return page;
       });
       const nextPages = [...prev.pages];
       nextPages.splice(nextPages.length - 1, 0, ...autoPages);
-      const lastWork = importedWorks[importedWorks.length - 1];
+      const importedWorkItems = importedWorks.map((it) => it.work);
+      const lastWork = importedWorkItems[importedWorkItems.length - 1];
       const firstPage = autoPages[0];
       return {
         ...prev,
-        works: [...prev.works, ...importedWorks],
+        works: [...prev.works, ...importedWorkItems],
         pages: nextPages,
         selectedWorkId: lastWork.id,
         activePageId: firstPage?.id || prev.activePageId,
@@ -1498,9 +1661,28 @@ export default function App() {
     patchState((prev) => ({ ...prev, selectedElement: { pageId: activeEditablePage.id, kind: "text", elementId: block.id } }));
   }
 
-  function addSelectedWorkToActivePage() {
+  async function addSelectedWorkToActivePage() {
     if (!activeEditablePage || activeEditablePage.type === "summary" || !selectedWork) return;
-    const placement = applyThemeDefaultsToPlacement(createPlacementForWork(selectedWork.id, 42, 42), state.theme);
+    const bounds = getActivePageLayoutBounds(activeEditablePage);
+    const imageDimensions = await readImageDimensions(selectedWork.imageUrl);
+    const captionH = (state.theme?.autoShowCaptionDefault ?? true) ? 46 : 28;
+    const captionGap = 8;
+    const maxW = Math.max(80, Math.round(bounds.width * 0.7));
+    const maxH = Math.max(80, Math.round(bounds.height * 0.7) - captionH - captionGap);
+    const fallbackAspect =
+      Number(imageDimensions?.width) > 0 && Number(imageDimensions?.height) > 0
+        ? Number(imageDimensions.width) / Math.max(1, Number(imageDimensions.height))
+        : 1;
+    const fitted = fitImageMmToBox(selectedWork, imageDimensions, maxW, maxH, fallbackAspect);
+    const x = Math.max(0, Math.round((bounds.width - fitted.w) / 2));
+    const y = Math.max(0, Math.round((bounds.height - fitted.h - captionH - captionGap) / 2));
+    const placement = applyThemeDefaultsToPlacement(createPlacementForWork(selectedWork.id, x, y), state.theme);
+    placement.w = fitted.w;
+    placement.h = fitted.h;
+    placement.captionX = Math.max(0, Math.round((bounds.width - Math.max(160, fitted.w)) / 2));
+    placement.captionY = y + fitted.h + captionGap;
+    placement.captionW = Math.min(bounds.width, Math.max(160, fitted.w));
+    placement.captionH = captionH;
     patchPage(activeEditablePage.id, (page) => ({
       ...page,
       placements: [...page.placements, { ...placement, zIndex: nextPlacementLayerZ(page) }],
@@ -1560,16 +1742,25 @@ export default function App() {
       const slot = slots[idx] || slots[slots.length - 1] || { x: 0, y: 0, w: base.w, h: base.h };
       const captionH = showCaption ? (mode === "grid4" ? 34 : 46) : 0;
       const captionGap = showCaption ? 6 : 0;
+      const slotW = Math.max(40, slot.w);
       const imgH = Math.max(40, slot.h - captionH - captionGap);
+      const imageDimensions = dimMap?.get(work.id) || null;
+      const fallbackAspect =
+        Number(imageDimensions?.width) > 0 && Number(imageDimensions?.height) > 0
+          ? Number(imageDimensions.width) / Math.max(1, Number(imageDimensions.height))
+          : slotW / Math.max(1, imgH);
+      const fitted = fitImageMmToBox(work, imageDimensions, slotW, imgH, fallbackAspect);
+      const imageX = slot.x + Math.round((slotW - fitted.w) / 2);
+      const imageY = slot.y + Math.round((imgH - fitted.h) / 2);
       const p = createPlacementForWork(work.id, slot.x, slot.y);
-      p.x = slot.x;
-      p.y = slot.y;
-      p.w = Math.max(40, slot.w);
-      p.h = imgH;
+      p.x = imageX;
+      p.y = imageY;
+      p.w = fitted.w;
+      p.h = fitted.h;
       p.showCaption = showCaption;
       p.captionX = slot.x;
       p.captionY = slot.y + imgH + captionGap;
-      p.captionW = Math.max(40, slot.w);
+      p.captionW = slotW;
       p.captionH = showCaption ? captionH : 28;
       p.captionOverride = [workLabel(work), [work.author, work.year].filter(Boolean).join(", ")].filter(Boolean).join("\n");
       p.zIndex = 100 + idx * 10;
@@ -1670,10 +1861,28 @@ export default function App() {
     return { width: fallback.width, height: fallback.height };
   }
 
-  function addWorkToPageAtPosition(pageId, workId, x, y) {
+  async function addWorkToPageAtPosition(pageId, workId, x, y) {
     const page = allEditablePages.find((p) => p.id === pageId);
     if (!page || page.type === "summary") return;
-    const placement = applyThemeDefaultsToPlacement(createPlacementForWork(workId, Math.max(0, x), Math.max(0, y)), state.theme);
+    const work = state.works.find((w) => w.id === workId);
+    const bounds = getActivePageLayoutBounds(page);
+    const safeX = clampNum(Math.round(x), 0, Math.max(0, bounds.width - 1));
+    const safeY = clampNum(Math.round(y), 0, Math.max(0, bounds.height - 1));
+    const imageDimensions = await readImageDimensions(work?.imageUrl);
+    const maxW = Math.max(40, bounds.width - safeX);
+    const maxH = Math.max(40, bounds.height - safeY);
+    const fallbackAspect =
+      Number(imageDimensions?.width) > 0 && Number(imageDimensions?.height) > 0
+        ? Number(imageDimensions.width) / Math.max(1, Number(imageDimensions.height))
+        : 1;
+    const fitted = fitImageMmToBox(work, imageDimensions, maxW, maxH, fallbackAspect);
+    const placement = applyThemeDefaultsToPlacement(createPlacementForWork(workId, safeX, safeY), state.theme);
+    placement.w = fitted.w;
+    placement.h = fitted.h;
+    placement.captionX = safeX;
+    placement.captionY = safeY + fitted.h + 8;
+    placement.captionW = Math.min(Math.max(40, bounds.width - safeX), Math.max(160, fitted.w));
+    placement.captionH = 46;
     patchPage(pageId, (p) => ({ ...p, placements: [...p.placements, { ...placement, zIndex: nextPlacementLayerZ(p) }] }));
     patchState((prev) => ({
       ...prev,
@@ -1758,43 +1967,65 @@ export default function App() {
       const areaW = Math.max(140, measured.width);
       const areaH = Math.max(180, measured.height);
       let placements = [...(prevPage.placements || [])];
+      const fitPlacementInSlot = (placement, slot, defaultCaptionH, captionGap) => {
+        const showCaption = placement.showCaption !== false;
+        const capH = showCaption ? defaultCaptionH : 0;
+        const gap = showCaption ? captionGap : 0;
+        const imageAreaH = Math.max(40, slot.h - capH - gap);
+        const ratio = Math.max(0.01, Number(placement.w || 1) / Math.max(1, Number(placement.h || 1)));
+        let w = Math.max(40, slot.w);
+        let h = w / ratio;
+        if (h > imageAreaH) {
+          h = imageAreaH;
+          w = h * ratio;
+        }
+        w = clampNum(Math.round(w), 40, Math.max(40, slot.w));
+        h = clampNum(Math.round(h), 40, Math.max(40, imageAreaH));
+        const x = Math.round(slot.x + (slot.w - w) / 2);
+        const y = Math.round(slot.y + (imageAreaH - h) / 2);
+        return {
+          ...placement,
+          x,
+          y,
+          w,
+          h,
+          captionX: slot.x,
+          captionY: slot.y + imageAreaH + gap,
+          captionW: Math.max(40, slot.w),
+          captionH: showCaption ? defaultCaptionH : 28,
+        };
+      };
 
       if (preset === "hero") {
         placements = ensurePlacementsForLayout(prevPage, 1);
         if (!placements.length) return prevPage;
         const p = { ...placements[0] };
-        p.w = Math.round(areaW * 0.82);
-        p.h = Math.round(areaH * 0.62);
-        p.x = Math.round((areaW - p.w) / 2);
-        p.y = Math.max(10, Math.round((areaH - p.h - 60) / 2));
-        p.captionW = Math.min(areaW, p.w);
-        p.captionH = 50;
-        p.captionX = Math.round((areaW - p.captionW) / 2);
-        p.captionY = p.y + p.h + 8;
-        placements = [p];
+        const slot = { x: 0, y: 0, w: areaW, h: areaH };
+        placements = [fitPlacementInSlot(p, slot, 50, 8)];
       }
 
       if (preset === "two-cols") {
         placements = ensurePlacementsForLayout(prevPage, 2);
         if (!placements.length) return prevPage;
         const gap = 12;
-        const w = Math.round((areaW - gap) / 2);
-        const h = Math.round(areaH * 0.55);
-        placements = placements.slice(0, 2).map((p, i) => {
-          const x = i * (w + gap);
-          const y = Math.max(10, Math.round((areaH - h - 56) / 2));
-          return {
-            ...p,
-            x,
-            y,
-            w,
-            h,
-            captionX: x,
-            captionY: y + h + 8,
-            captionW: w,
-            captionH: 48,
-          };
-        });
+        const portrait = areaH >= areaW;
+        if (portrait) {
+          const h1 = Math.floor((areaH - gap) / 2);
+          const h2 = areaH - h1 - gap;
+          const slots = [
+            { x: 0, y: 0, w: areaW, h: h1 },
+            { x: 0, y: h1 + gap, w: areaW, h: h2 },
+          ];
+          placements = placements.slice(0, 2).map((p, i) => fitPlacementInSlot(p, slots[i], 48, 8));
+        } else {
+          const w1 = Math.floor((areaW - gap) / 2);
+          const w2 = areaW - w1 - gap;
+          const slots = [
+            { x: 0, y: 0, w: w1, h: areaH },
+            { x: w1 + gap, y: 0, w: w2, h: areaH },
+          ];
+          placements = placements.slice(0, 2).map((p, i) => fitPlacementInSlot(p, slots[i], 48, 8));
+        }
       }
 
       if (preset === "grid4") {
@@ -1805,23 +2036,17 @@ export default function App() {
         const gapX = 12;
         const gapY = 12;
         const w = Math.round((areaW - gapX) / cols);
-        const h = Math.round((areaH - gapY - 2 * 46) / rows);
+        const h = Math.round((areaH - gapY) / rows);
         placements = placements.slice(0, 4).map((p, i) => {
           const col = i % cols;
           const row = Math.floor(i / cols);
-          const x = col * (w + gapX);
-          const y = row * (h + gapY + 38);
-          return {
-            ...p,
-            x,
-            y,
+          const slot = {
+            x: col * (w + gapX),
+            y: row * (h + gapY),
             w,
             h,
-            captionX: x,
-            captionY: y + h + 6,
-            captionW: w,
-            captionH: 36,
           };
+          return fitPlacementInSlot(p, slot, 36, 6);
         });
       }
 
@@ -2008,6 +2233,7 @@ export default function App() {
   })();
 
   function exportCatalogJson() {
+    const baseName = slugifyFileBaseName(state.projectTitle, "catalogo-opere");
     const payload = {
       exportedAt: new Date().toISOString(),
       version: 1,
@@ -2017,7 +2243,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `catalogo-opere-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `${baseName}-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -2028,14 +2254,15 @@ export default function App() {
     const incoming = parsed.catalog || parsed;
     const importedWorks = await Promise.all(
       (incoming.works || []).map(async (work) => {
-        if (!work.imageUrl) return work;
-        const imageId = work.imageId || uid("img");
+        const normalized = normalizeWorkData(work);
+        if (!normalized.imageUrl) return normalized;
+        const imageId = normalized.imageId || uid("img");
         try {
-          await idbPutImage(imageId, work.imageUrl);
+          await idbPutImage(imageId, normalized.imageUrl);
         } catch {
           // keep imageUrl in memory even if IDB fails
         }
-        return { ...work, imageId };
+        return { ...normalized, imageId };
       }),
     );
     const base = createDefaultState();
@@ -2199,7 +2426,7 @@ export default function App() {
       setState({
         ...base,
         ...incoming,
-        works: (incoming.works || []).map((w) => ({ ...w, imageUrl: "" })),
+        works: (incoming.works || []).map((w) => ({ ...normalizeWorkData(w), imageUrl: "" })),
         selectedElement: null,
         currentSpread: 0,
       });
@@ -2269,23 +2496,17 @@ export default function App() {
 
       for (let i = 0; i < pageEls.length; i += 1) {
         const canvas = await html2canvas(pageEls[i], {
-          backgroundColor: "#ffffff",
+          backgroundColor: null,
           scale,
           useCORS: true,
           logging: false,
         });
-        const imgData = canvas.toDataURL("image/jpeg", 0.92);
+        const imgData = canvas.toDataURL("image/png");
         if (i > 0) pdf.addPage([fmt.width, fmt.height], orientation);
-        pdf.addImage(imgData, "JPEG", 0, 0, fmt.width, fmt.height, undefined, "FAST");
+        pdf.addImage(imgData, "PNG", 0, 0, fmt.width, fmt.height);
       }
 
-      const currentProject = savedProjects.find((p) => p.id === currentProjectId);
-      const baseName = (currentProject?.name || "catalogo-book")
-        .trim()
-        .replace(/[^\w\-]+/g, "-")
-        .replace(/-+/g, "-")
-        .replace(/^-|-$/g, "")
-        .toLowerCase();
+      const baseName = slugifyFileBaseName(state.projectTitle, "catalogo-book");
       pdf.save(`${baseName || "catalogo-book"}.pdf`);
     } catch (err) {
       window.alert(`Esportazione PDF fallita: ${err?.message || "errore sconosciuto"}`);
@@ -2303,10 +2524,6 @@ export default function App() {
         else el.setAttribute("style", prev);
       });
     }
-  }
-
-  function resetSummaryPagesOverrides() {
-    patchState((prev) => ({ ...prev, summaryPageEdits: {} }));
   }
 
   function createNewProject() {
@@ -2343,7 +2560,16 @@ export default function App() {
       <header className="topbar">
         <div className="topbar-main">
           <div>
-            <h1>Catalogo Opere</h1>
+            <div className="topbar-title-row">
+              <h1>Catalogo Opere</h1>
+              <input
+                className="page-title-chip"
+                aria-label="Titolo progetto"
+                value={state.projectTitle || ""}
+                onChange={(e) => patchState({ projectTitle: e.target.value })}
+                placeholder="Titolo progetto"
+              />
+            </div>
             {persistWarning && <p className="warn-text">{persistWarning}</p>}
           </div>
           <div ref={topbarActionsRef} className="topbar-actions">
@@ -2362,7 +2588,6 @@ export default function App() {
                 <button onClick={exportCatalogJson}>Esporta JSON</button>
                 <button onClick={printCatalogPdf}>Esporta PDF Book</button>
                 <button onClick={() => importJsonRef.current?.click()}>Importa JSON</button>
-                <button onClick={resetSummaryPagesOverrides}>Rigenera elenco opere</button>
                 <div className="saved-projects-list">
                   <small>Progetti salvati</small>
                   {!savedProjects.length && <div className="saved-project-row empty">Nessun progetto</div>}
@@ -3013,6 +3238,14 @@ function ThemePanel({ theme, onChange, onMarginsChange, onClose }) {
           onChange={(e) => onChange({ defaultPageBgColor: e.target.value })}
         />
       </label>
+      <label>
+        Colore numero pagina default
+        <input
+          type="color"
+          value={theme.defaultPageNumberColor || "#6b614f"}
+          onChange={(e) => onChange({ defaultPageNumberColor: e.target.value })}
+        />
+      </label>
       <label className="inline-check">
         <input
           type="checkbox"
@@ -3028,6 +3261,14 @@ function ThemePanel({ theme, onChange, onMarginsChange, onClose }) {
         value={theme.defaultElementBorderPct ?? 3}
         onChange={(v) => onChange({ defaultElementBorderPct: v })}
       />
+      <label>
+        Colore bordo elementi default
+        <input
+          type="color"
+          value={theme.defaultElementBorderColor || "#ffffff"}
+          onChange={(e) => onChange({ defaultElementBorderColor: e.target.value })}
+        />
+      </label>
       <div className="grid-2">
         <RangeField
           label="Margine top"
@@ -3092,7 +3333,7 @@ function ElementInspector({ kind, data, onChange }) {
     return (
       <div className="stack-fields">
         <label>
-          Testo
+          Testo (Markdown)
           <textarea rows={5} value={data.text || ""} onChange={(e) => onChange({ text: e.target.value })} />
         </label>
         <RangeField label="Font size" min={10} max={42} value={data.fontSize || 16} onChange={(v) => onChange({ fontSize: v })} />
@@ -3119,6 +3360,15 @@ function ElementInspector({ kind, data, onChange }) {
   }
   return (
     <div className="stack-fields">
+      <label>
+        Didascalia (Markdown)
+        <textarea
+          rows={4}
+          value={data.captionOverride || ""}
+          onChange={(e) => onChange({ captionOverride: e.target.value })}
+          placeholder="Se vuoto usa didascalia automatica (titolo, autore, anno)"
+        />
+      </label>
       <RangeField label="Bordo immagine %" min={0} max={20} value={data.borderWidthPct ?? 5} onChange={(v) => onChange({ borderWidthPct: v })} />
       <label>
         Colore bordo immagine
@@ -3278,6 +3528,14 @@ function WorkEditorModal({ draft, onCancel, onSave }) {
                 {label}
                 {key === "notes" ? (
                   <textarea rows={3} value={form[key] || ""} onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))} />
+                ) : key === "dpi" ? (
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={form[key] ?? DEFAULT_WORK_DPI}
+                    onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))}
+                  />
                 ) : (
                   <input value={form[key] || ""} onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))} />
                 )}
@@ -3623,11 +3881,47 @@ function PageCanvas({
     if (drag.mode === "resize") {
       const maxW = Math.max(40, constraintBox.maxWidth - Math.max(0, (drag.anchor?.x ?? 0) - constraintBox.minX));
       const maxH = Math.max(28, constraintBox.maxHeight - Math.max(0, (drag.anchor?.y ?? 0) - constraintBox.minY));
-      const nextW = clampNum(snapAxis(drag.start.w + dx, guideTargetsX, "x"), 40, maxW);
-      const nextH = clampNum(snapAxis(drag.start.h + dy, guideTargetsY, "y"), 28, maxH);
       if (drag.kind === "placement" && drag.handle === "caption") {
+        const nextW = clampNum(snapAxis(drag.start.w + dx, guideTargetsX, "x"), 40, maxW);
+        const nextH = clampNum(snapAxis(drag.start.h + dy, guideTargetsY, "y"), 28, maxH);
         onMoveElement(page.id, drag.kind, drag.elementId, { captionW: nextW, captionH: nextH });
+      } else if (drag.kind === "placement") {
+        const startW = Math.max(40, Number(drag.start?.w) || 40);
+        const startH = Math.max(40, Number(drag.start?.h) || 40);
+        const ratio = Math.max(0.01, startW / startH);
+        const useWidthDriver = Math.abs(dx / startW) >= Math.abs(dy / startH);
+
+        let nextW;
+        let nextH;
+        if (useWidthDriver) {
+          nextW = clampNum(snapAxis(startW + dx, guideTargetsX, "x"), 40, maxW);
+          nextH = nextW / ratio;
+        } else {
+          nextH = clampNum(snapAxis(startH + dy, guideTargetsY, "y"), 40, maxH);
+          nextW = nextH * ratio;
+        }
+
+        if (nextH > maxH) {
+          nextH = maxH;
+          nextW = nextH * ratio;
+        }
+        if (nextW > maxW) {
+          nextW = maxW;
+          nextH = nextW / ratio;
+        }
+        if (nextH < 40) {
+          nextH = 40;
+          nextW = nextH * ratio;
+        }
+        if (nextW < 40) {
+          nextW = 40;
+          nextH = nextW / ratio;
+        }
+
+        onMoveElement(page.id, drag.kind, drag.elementId, { w: Math.round(nextW), h: Math.round(nextH) });
       } else {
+        const nextW = clampNum(snapAxis(drag.start.w + dx, guideTargetsX, "x"), 40, maxW);
+        const nextH = clampNum(snapAxis(drag.start.h + dy, guideTargetsY, "y"), 28, maxH);
         onMoveElement(page.id, drag.kind, drag.elementId, { w: nextW, h: nextH });
       }
     } else {
@@ -3808,6 +4102,29 @@ function PageCanvas({
     setInlineEdit(null);
   }
 
+  async function maximizePlacementToBounds(placement, work) {
+    const innerRect = innerRef.current?.getBoundingClientRect();
+    const scale = zoomScale || 1;
+    const innerW = (innerRect?.width || 0) / scale;
+    const innerH = (innerRect?.height || 0) / scale;
+    const box = getRenderedConstraintBox(page, innerW, innerH, layoutAssist?.boundMode || "margins");
+    const imageDimensions = await readImageDimensions(work?.imageUrl);
+    const fallbackAspect =
+      Number(imageDimensions?.width) > 0 && Number(imageDimensions?.height) > 0
+        ? Number(imageDimensions.width) / Math.max(1, Number(imageDimensions.height))
+        : Math.max(0.01, Number(placement?.w || 1) / Math.max(1, Number(placement?.h || 1)));
+    const fitted = fitImageMmToBox(work, imageDimensions, box.maxWidth, box.maxHeight, fallbackAspect);
+    onMoveElement(page.id, "placement", placement.id, {
+      x: Math.round(box.minX),
+      y: Math.round(box.minY),
+      w: Math.round(fitted.w),
+      h: Math.round(fitted.h),
+      imageOffsetX: 0,
+      imageOffsetY: 0,
+      imageScale: 1,
+    });
+  }
+
   return (
     <article
       ref={pageRef}
@@ -3900,6 +4217,12 @@ function PageCanvas({
                       onSelectPage();
                       onSelectElement({ pageId: page.id, kind: "placement", elementId: placement.id });
                     }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      onSelectPage();
+                      onSelectElement({ pageId: page.id, kind: "placement", elementId: placement.id });
+                      maximizePlacementToBounds(placement, work);
+                    }}
                   >
                     {work.imageUrl ? (
                       <img
@@ -3979,17 +4302,19 @@ function PageCanvas({
                         border: `${capBorderPx}px solid ${placement.captionBorderColor || "#ffffff"}`,
                       }}
                       onPointerDown={(e) =>
-                        startDrag(
-                          e,
-                          "placement",
-                          placement.id,
-                          {
-                            x: placement.captionX ?? placement.x,
-                            y: placement.captionY ?? placement.y + placement.h + 8,
-                          },
-                          "caption",
-                          { w: placement.captionW ?? 220, h: placement.captionH ?? 70 },
-                        )
+                        (e.target.closest("a")
+                          ? null
+                          : startDrag(
+                              e,
+                              "placement",
+                              placement.id,
+                              {
+                                x: placement.captionX ?? placement.x,
+                                y: placement.captionY ?? placement.y + placement.h + 8,
+                              },
+                              "caption",
+                              { w: placement.captionW ?? 220, h: placement.captionH ?? 70 },
+                            ))
                       }
                       onDoubleClick={(e) => {
                         e.stopPropagation();
@@ -4034,15 +4359,10 @@ function PageCanvas({
                           }}
                         />
                       ) : (
-                        (() => {
-                          const parts = captionPartsFromText(defaultPlacementCaption(placement, work));
-                          return (
-                            <>
-                              <strong>{parts.title}</strong>
-                              {parts.meta ? <small>{parts.meta}</small> : null}
-                            </>
-                          );
-                        })()
+                        <div
+                          className="markdown-content caption-markdown"
+                          dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(defaultPlacementCaption(placement, work), { inline: false }) }}
+                        />
                       )}
                       <span
                         className="resize-handle"
@@ -4093,6 +4413,7 @@ function PageCanvas({
                     border: `${txtBorderPx}px solid ${txt.borderColor || "#ffffff"}`,
                   }}
                   onPointerDown={(e) => {
+                    if (e.target.closest("a")) return;
                     if (isEditing) {
                       e.stopPropagation();
                       return;
@@ -4142,7 +4463,7 @@ function PageCanvas({
                       }}
                     />
                   ) : (
-                    txt.text
+                    <div className="markdown-content" dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(txt.text, { inline: false }) }} />
                   )}
                   <span
                     className="resize-handle"

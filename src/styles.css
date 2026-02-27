@@ -63,6 +63,29 @@ textarea {
   letter-spacing: 0.02em;
 }
 
+.topbar-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.page-title-chip {
+  min-width: 220px;
+  max-width: min(48vw, 560px);
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.page-title-chip:focus {
+  outline: 1px solid rgba(17, 17, 17, 0.25);
+  border-color: rgba(17, 17, 17, 0.5);
+}
+
 .topbar p {
   margin: 4px 0 0;
   color: #666;
@@ -419,7 +442,7 @@ button:disabled {
   min-width: 0;
   min-height: 0;
   align-self: center;
-  border-radius: 12px;
+  border-radius: 0;
   box-shadow:
     0 12px 30px var(--paper-shadow, rgba(65, 45, 24, 0.18)),
     inset 0 0 0 1px rgba(106, 83, 56, 0.12);
@@ -669,12 +692,88 @@ button:disabled {
 }
 
 .text-box {
-  white-space: pre-wrap;
   line-height: 1.2;
   padding: 4px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.42);
   overflow: hidden;
+}
+
+.markdown-content {
+  line-height: 1.25;
+}
+
+.markdown-content p,
+.markdown-content ul,
+.markdown-content ol,
+.markdown-content blockquote,
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  margin: 0 0 0.35em;
+}
+
+.markdown-content p:last-child,
+.markdown-content ul:last-child,
+.markdown-content ol:last-child,
+.markdown-content blockquote:last-child,
+.markdown-content h1:last-child,
+.markdown-content h2:last-child,
+.markdown-content h3:last-child,
+.markdown-content h4:last-child,
+.markdown-content h5:last-child,
+.markdown-content h6:last-child,
+.markdown-content .md-h7:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  padding-left: 1.1em;
+}
+
+.markdown-content .task-item {
+  list-style: none;
+  margin-left: -1.1em;
+}
+
+.markdown-content .task-item input[type="checkbox"] {
+  vertical-align: middle;
+}
+
+.markdown-content a {
+  color: inherit;
+  text-decoration: underline;
+  pointer-events: auto;
+}
+
+.markdown-content code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 3px;
+  padding: 0 0.25em;
+}
+
+.markdown-content blockquote {
+  border-left: 3px solid rgba(0, 0, 0, 0.22);
+  padding-left: 0.65em;
+  color: rgba(0, 0, 0, 0.76);
+  font-style: italic;
+}
+
+.markdown-content .md-h7 {
+  font-size: 0.86em;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.caption-markdown {
+  width: 100%;
+  text-align: inherit;
 }
 
 .inline-text-editor {
@@ -1207,6 +1306,31 @@ textarea {
   display: none;
 }
 
+/* Export PDF (html2canvas) does not run in @media print: force clean render here. */
+.print-catalog .element-delete-btn,
+.print-catalog .element-transfer-btn,
+.print-catalog .resize-handle,
+.print-catalog .snap-guide,
+.print-catalog .page-ruler,
+.print-catalog .ruler-corner {
+  display: none !important;
+}
+
+.print-catalog .draggable-box,
+.print-catalog .draggable-box.selected {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.print-catalog .page-inner.left,
+.print-catalog .page-inner.right {
+  border: 0 !important;
+}
+
+.print-catalog .text-box {
+  background: transparent !important;
+}
+
 @media (max-width: 1180px) {
   .workspace {
     grid-template-columns: 84px 1fr;
@@ -1367,13 +1491,33 @@ textarea {
     box-shadow: none !important;
     border-radius: 0 !important;
     outline: none !important;
+    background-image: none !important;
   }
 
   .print-page-source .element-delete-btn,
+  .print-page-source .element-transfer-btn,
   .print-page-source .resize-handle,
   .print-page-source .snap-guide,
   .print-page-source .page-ruler,
   .print-page-source .ruler-corner {
     display: none !important;
+  }
+
+  .print-page-source .draggable-box,
+  .print-page-source .draggable-box.selected {
+    outline: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  .print-page-source .page-inner.left,
+  .print-page-source .page-inner.right {
+    border: 0 !important;
+  }
+
+  .print-page-source,
+  .print-page-source > .page-canvas {
+    border: 0 !important;
+    border-radius: 0 !important;
   }
 }
