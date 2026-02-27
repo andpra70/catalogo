@@ -87,6 +87,61 @@ function slugifyFileBaseName(value, fallback = "catalogo-book") {
   return base || fallback;
 }
 
+function clamp01(value, fallback = 1) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(1, n));
+}
+
+function parseColorToRgbaParts(input) {
+  const raw = String(input || "").trim();
+  if (!raw) return null;
+  const hexMatch = raw.match(/^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/);
+  if (hexMatch) {
+    const hex = hexMatch[1];
+    if (hex.length === 3 || hex.length === 4) {
+      const r = parseInt(hex[0] + hex[0], 16);
+      const g = parseInt(hex[1] + hex[1], 16);
+      const b = parseInt(hex[2] + hex[2], 16);
+      const a = hex.length === 4 ? parseInt(hex[3] + hex[3], 16) / 255 : 1;
+      return { r, g, b, a };
+    }
+    if (hex.length === 6 || hex.length === 8) {
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      const a = hex.length === 8 ? parseInt(hex.slice(6, 8), 16) / 255 : 1;
+      return { r, g, b, a };
+    }
+  }
+  const rgbMatch = raw.match(/^rgba?\(\s*([0-9.]+)\s*[, ]\s*([0-9.]+)\s*[, ]\s*([0-9.]+)(?:\s*[,/]\s*([0-9.]+))?\s*\)$/i);
+  if (rgbMatch) {
+    const r = clampNum(Math.round(Number(rgbMatch[1]) || 0), 0, 255);
+    const g = clampNum(Math.round(Number(rgbMatch[2]) || 0), 0, 255);
+    const b = clampNum(Math.round(Number(rgbMatch[3]) || 0), 0, 255);
+    const a = clamp01(rgbMatch[4] == null ? 1 : Number(rgbMatch[4]), 1);
+    return { r, g, b, a };
+  }
+  return null;
+}
+
+function rgbaPartsToCss({ r, g, b, a }) {
+  const alpha = Math.round(clamp01(a, 1) * 1000) / 1000;
+  return `rgba(${clampNum(Math.round(r), 0, 255)}, ${clampNum(Math.round(g), 0, 255)}, ${clampNum(Math.round(b), 0, 255)}, ${alpha})`;
+}
+
+function toHex2(value) {
+  return clampNum(Math.round(value), 0, 255).toString(16).padStart(2, "0");
+}
+
+function colorToHexAlpha(color, fallback = "rgba(255, 255, 255, 0.42)") {
+  const parsed = parseColorToRgbaParts(color) || parseColorToRgbaParts(fallback) || { r: 255, g: 255, b: 255, a: 0.42 };
+  return {
+    hex: `#${toHex2(parsed.r)}${toHex2(parsed.g)}${toHex2(parsed.b)}`,
+    alpha: clamp01(parsed.a, 0.42),
+  };
+}
+
 function escapeHtml(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
@@ -417,6 +472,7 @@ function createDefaultState() {
       defaultElementBorderPct: 3,
       defaultElementBorderColor: "#ffffff",
       defaultPageNumberColor: "#6b614f",
+      defaultTextBgColor: "rgba(255, 255, 255, 0.42)",
     },
     pageFormat: "a4-portrait",
     summaryPageEdits: {},
@@ -1181,6 +1237,7 @@ export default function App() {
   const [savedThemes, setSavedThemes] = useState(() => loadThemesIndex());
   const [currentThemeId, setCurrentThemeId] = useState(null);
   const [themeDialog, setThemeDialog] = useState({ open: false, mode: "save", name: "" });
+  const [printProgress, setPrintProgress] = useState({ active: false, current: 0, total: 0, message: "" });
 
   useEffect(() => {
     autoLayoutModeRef.current = autoLayoutMode;
@@ -2464,6 +2521,7 @@ export default function App() {
     const previousPageStyles = pageEls.map((el) => el.getAttribute("style"));
     const previousPageSourceStyles = pageSourceEls.map((el) => el.getAttribute("style"));
     try {
+      setPrintProgress({ active: true, current: 0, total: pageEls.length, message: "Preparazione export PDF..." });
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
       const fmt = getPageFormat(state.pageFormat);
       const orientation = fmt.width > fmt.height ? "landscape" : "portrait";
@@ -2495,6 +2553,8 @@ export default function App() {
       });
 
       for (let i = 0; i < pageEls.length; i += 1) {
+        setPrintProgress({ active: true, current: i + 1, total: pageEls.length, message: `Rendering pagina ${i + 1}/${pageEls.length}...` });
+        await new Promise((resolve) => requestAnimationFrame(resolve));
         const canvas = await html2canvas(pageEls[i], {
           backgroundColor: null,
           scale,
@@ -2507,6 +2567,7 @@ export default function App() {
       }
 
       const baseName = slugifyFileBaseName(state.projectTitle, "catalogo-book");
+      setPrintProgress({ active: true, current: pageEls.length, total: pageEls.length, message: "Salvataggio PDF..." });
       pdf.save(`${baseName || "catalogo-book"}.pdf`);
     } catch (err) {
       window.alert(`Esportazione PDF fallita: ${err?.message || "errore sconosciuto"}`);
@@ -2523,6 +2584,7 @@ export default function App() {
         if (prev == null) el.removeAttribute("style");
         else el.setAttribute("style", prev);
       });
+      setPrintProgress({ active: false, current: 0, total: 0, message: "" });
     }
   }
 
@@ -2806,7 +2868,21 @@ export default function App() {
           </div>
         </div>
       </header>
-
+      {printProgress.active && (
+        <div className="export-progress" role="status" aria-live="polite">
+          <strong>{printProgress.message || "Esportazione PDF..."}</strong>
+          <div className="export-progress-bar">
+            <span
+              style={{
+                width: `${Math.round(((printProgress.current || 0) * 100) / Math.max(1, printProgress.total || 1))}%`,
+              }}
+            />
+          </div>
+          <small>
+            {printProgress.current}/{printProgress.total}
+          </small>
+        </div>
+      )}
       <main className="workspace">
         <Filmstrip
           works={state.works}
