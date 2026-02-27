@@ -1420,6 +1420,15 @@ textarea {
   border: 0 !important;
 }
 
+.print-catalog .print-page-sheet {
+  background: transparent !important;
+}
+
+.print-catalog .page-canvas {
+  box-shadow: none !important;
+  background-image: none !important;
+}
+
 @media (max-width: 1180px) {
   .workspace {
     grid-template-columns: 84px 1fr;

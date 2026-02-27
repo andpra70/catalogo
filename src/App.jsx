@@ -2567,6 +2567,7 @@ export default function App() {
     const printCatalogEl = document.querySelector(".print-catalog");
     const pageEls = Array.from(document.querySelectorAll(".print-page-sheet"));
     const pageSourceEls = Array.from(document.querySelectorAll(".print-page-source"));
+    const exportPages = (renderPages || []).filter(Boolean);
     if (!printCatalogEl || !pageEls.length) {
       window.alert("Nessuna pagina disponibile per l'esportazione PDF.");
       return;
@@ -2594,10 +2595,11 @@ export default function App() {
         "style",
         `${previousCatalogStyle || ""};display:block;position:fixed;left:-100000px;top:0;opacity:1;pointer-events:none;z-index:-1;`,
       );
-      pageEls.forEach((el) => {
+      pageEls.forEach((el, pageIdx) => {
+        const pageBg = exportPages[pageIdx]?.bgColor || "#ffffff";
         el.setAttribute(
           "style",
-          `${el.getAttribute("style") || ""};display:block;position:relative;overflow:hidden;background:#ffffff;width:${targetWpx}px;height:${targetHpx}px;`,
+          `${el.getAttribute("style") || ""};display:block;position:relative;overflow:hidden;background:${pageBg};width:${targetWpx}px;height:${targetHpx}px;`,
         );
       });
       pageSourceEls.forEach((el) => {
@@ -2611,7 +2613,7 @@ export default function App() {
         setPrintProgress({ active: true, current: i + 1, total: pageEls.length, message: `Rendering pagina ${i + 1}/${pageEls.length}...` });
         await new Promise((resolve) => requestAnimationFrame(resolve));
         const canvas = await html2canvas(pageEls[i], {
-          backgroundColor: null,
+          backgroundColor: exportPages[i]?.bgColor || "#ffffff",
           scale,
           useCORS: true,
           logging: false,
@@ -4230,6 +4232,11 @@ function PageCanvas({
     inset: `${page.margins?.top ?? 20}px ${page.margins?.right ?? 20}px ${page.margins?.bottom ?? 30}px ${page.margins?.left ?? 20}px`,
   };
   const format = getPageFormat(pageFormat);
+  const topPlacementZ =
+    (page.placements || []).reduce((maxZ, p) => {
+      const z = Number(p?.zIndex);
+      return Number.isFinite(z) ? Math.max(maxZ, z) : maxZ;
+    }, 0) + 2000;
 
   function handleWorkDragOver(e) {
     if (page.type === "summary") return;
@@ -4610,7 +4617,7 @@ function PageCanvas({
                     top: txt.y,
                     width: txt.w,
                     height: txt.h,
-                    zIndex: isSelected ? 10 : 6,
+                    zIndex: isSelected ? topPlacementZ + 1 : topPlacementZ,
                     pointerEvents: textLockedOut ? "none" : "auto",
                     color: txt.color || theme.textColor,
                     background: txt.bgColor || theme.defaultTextBgColor || "rgba(255, 255, 255, 0.42)",
