@@ -1417,6 +1417,97 @@ function buildJustifiedLayoutFromRowSizes(works, rowSizes, areaW, areaH, dimMap,
   };
 }
 
+function buildQuadGridPlacements(works, areaW, areaH, dimMap, themeCfg) {
+  const items = (works || []).slice(0, 4).map((work) => ({ work, aspect: getWorkAspectRatio(work, dimMap) }));
+  if (!items.length) return { placements: [], valid: true, fillRatio: 0, totalHeight: 0, rowCount: 0 };
+  const gapX = 10;
+  const gapY = 10;
+  const colW = Math.max(40, Math.floor((areaW - gapX) / 2));
+  const rowTotalH = Math.max(40, Math.floor((areaH - gapY) / 2));
+  const placements = [];
+
+  for (let rowIdx = 0; rowIdx < 2; rowIdx += 1) {
+    const rowItems = items.slice(rowIdx * 2, rowIdx * 2 + 2);
+    if (!rowItems.length) continue;
+    const captions = rowItems.map((item) => buildPlacementCaptionForWork(item.work, colW, item.aspect, themeCfg));
+    const maxCaptionFootprint = captions.reduce(
+      (max, caption) => Math.max(max, caption.showCaption ? caption.h + caption.gap : 0),
+      0,
+    );
+    const imageH = Math.max(40, rowTotalH - maxCaptionFootprint);
+    const y = rowIdx * (rowTotalH + gapY);
+    rowItems.forEach((item, colIdx) => {
+      const x = colIdx * (colW + gapX);
+      placements.push(
+        createPlacementForExactFrame(
+          item.work,
+          x,
+          y,
+          colW,
+          imageH,
+          captions[colIdx],
+          themeCfg,
+          100 + placements.length * 10,
+        ),
+      );
+    });
+  }
+
+  return {
+    placements,
+    valid: true,
+    fillRatio: 1,
+    totalHeight: areaH,
+    rowCount: 2,
+  };
+}
+
+function buildDoublePlacements(works, areaW, areaH, dimMap, themeCfg) {
+  const items = (works || []).slice(0, 2).map((work) => ({ work, aspect: getWorkAspectRatio(work, dimMap) }));
+  if (!items.length) return { placements: [], valid: true, fillRatio: 0, totalHeight: 0, rowCount: 0 };
+  if (items.length === 1) return buildFixedPresetPlacements("single", works, areaW, areaH, dimMap, themeCfg);
+
+  const gap = 10;
+  const buildVariant = (orientation) => {
+    const horizontal = orientation === "horizontal";
+    const slots = horizontal
+      ? [
+          { x: 0, y: 0, w: Math.max(40, Math.floor((areaW - gap) / 2)), h: areaH },
+          { x: Math.max(40, Math.floor((areaW - gap) / 2)) + gap, y: 0, w: Math.max(40, areaW - Math.max(40, Math.floor((areaW - gap) / 2)) - gap), h: areaH },
+        ]
+      : [
+          { x: 0, y: 0, w: areaW, h: Math.max(40, Math.floor((areaH - gap) / 2)) },
+          { x: 0, y: Math.max(40, Math.floor((areaH - gap) / 2)) + gap, w: areaW, h: Math.max(40, areaH - Math.max(40, Math.floor((areaH - gap) / 2)) - gap) },
+        ];
+    const placements = items.map((item, idx) =>
+      createPlacementForSlotWork(item.work, slots[idx], themeCfg, item.aspect, 100 + idx * 10),
+    );
+    const imageArea = placements.reduce((sum, placement) => sum + placement.w * placement.h, 0);
+    const captionFootprint = placements.reduce(
+      (sum, placement) => sum + (placement.showCaption === false ? 0 : (placement.captionH || 0) + 8),
+      0,
+    );
+    const dominantPortrait = items.filter((item) => item.aspect < 0.95).length;
+    const dominantLandscape = items.filter((item) => item.aspect > 1.15).length;
+    const orientationBonus = horizontal
+      ? dominantLandscape * 0.08 + (areaW >= areaH ? 0.04 : 0)
+      : dominantPortrait * 0.08 + (areaH > areaW ? 0.04 : 0);
+    const score = imageArea / Math.max(1, areaW * areaH) + orientationBonus - captionFootprint / Math.max(1, areaW * areaH * 3);
+    return {
+      placements,
+      valid: true,
+      fillRatio: imageArea / Math.max(1, areaW * areaH),
+      totalHeight: areaH,
+      rowCount: horizontal ? 1 : 2,
+      score,
+    };
+  };
+
+  const horizontalVariant = buildVariant("horizontal");
+  const verticalVariant = buildVariant("vertical");
+  return horizontalVariant.score >= verticalVariant.score ? horizontalVariant : verticalVariant;
+}
+
 function buildFixedPresetPlacements(presetId, works, areaW, areaH, dimMap, themeCfg) {
   if (presetId === "single") {
     const work = works?.[0];
@@ -1433,9 +1524,13 @@ function buildFixedPresetPlacements(presetId, works, areaW, areaH, dimMap, theme
     };
   }
   const count = Math.min(works?.length || 0, presetId === "double" ? 2 : 4);
+  if (presetId === "double" && count >= 2) {
+    return buildDoublePlacements(works, areaW, areaH, dimMap, themeCfg);
+  }
+  if (presetId === "quad" && count >= 4) {
+    return buildQuadGridPlacements(works, areaW, areaH, dimMap, themeCfg);
+  }
   const candidates = [];
-  if (presetId === "double" && count >= 2) candidates.push([2], [1, 1]);
-  if (presetId === "quad" && count >= 4) candidates.push([4], [2, 2], [3, 1]);
   if (!candidates.length) candidates.push([count]);
   let best = null;
   candidates.forEach((rowSizes) => {
