@@ -7,8 +7,6 @@ const THEMES_INDEX_KEY = "catalogo-opere-themes-index-v1";
 const THEME_STORAGE_PREFIX = "catalogo-opere-theme:";
 const IMAGE_DB_NAME = "catalogo-opere-assets";
 const IMAGE_STORE_NAME = "images";
-const DEFAULT_WORK_DPI = 75;
-const MM_PER_INCH = 25.4;
 const DEFAULT_PREFACE_TITLE_MD = "# Prefazione";
 const DEFAULT_PREFACE_BODY_MD =
   "Questo catalogo raccoglie una selezione di opere con una sequenza pensata per accompagnare la lettura tra immagini, ritmo di pagina e apparati testuali.\n\n## Linea curatoriale\n- relazione tra *materia* e luce\n- dialogo tra archivio e presente\n- attenzione al ritmo visivo di pagina\n\n> Questo testo e un template: sostituiscilo con la prefazione definitiva.";
@@ -50,7 +48,6 @@ const WORK_FIELDS = [
   ["type", "Tipo"],
   ["technique", "Tecnica"],
   ["dimensions", "Dimensioni"],
-  ["dpi", "DPI"],
   ["inventory", "Inventario"],
   ["location", "Collocazione"],
   ["notes", "Note"],
@@ -72,6 +69,37 @@ const PAGE_FORMATS = [
   { id: "b5-portrait", label: "B5 Verticale", width: 176, height: 250 },
   { id: "b5-landscape", label: "B5 Orizzontale", width: 250, height: 176 },
   { id: "square-small", label: "Quadrato 210", width: 210, height: 210 },
+];
+
+const LAYOUT_PRESETS = [
+  {
+    id: "single",
+    label: "1",
+    title: "Una foto",
+    summary: "Una foto per pagina, espansa entro i vincoli del formato corrente.",
+    fixedCount: 1,
+  },
+  {
+    id: "double",
+    label: "2",
+    title: "Due foto",
+    summary: "Due foto per pagina con split ottimizzato tra colonne o fasce.",
+    fixedCount: 2,
+  },
+  {
+    id: "quad",
+    label: "4",
+    title: "Quattro foto",
+    summary: "Quattro foto per pagina con il miglior riempimento tra griglia e strisce.",
+    fixedCount: 4,
+  },
+  {
+    id: "masonry",
+    label: "M",
+    title: "Masonry",
+    summary: "Righellatura giustificata in stile Metafizzy con incastri a piena larghezza.",
+    fixedCount: null,
+  },
 ];
 
 function getPageFormat(formatId) {
@@ -266,26 +294,9 @@ function renderMarkdownToHtml(md, { inline = false } = {}) {
   return out.join("");
 }
 
-function normalizeWorkDpi(value) {
-  const dpi = Number(value);
-  if (Number.isFinite(dpi) && dpi > 0) return Math.round(dpi);
-  return DEFAULT_WORK_DPI;
-}
-
 function normalizeWorkData(work) {
-  return { ...(work || {}), dpi: normalizeWorkDpi(work?.dpi) };
-}
-
-function readImagePhysicalSizeMm(imageDimensions, dpiValue) {
-  const widthPx = Number(imageDimensions?.width);
-  const heightPx = Number(imageDimensions?.height);
-  const dpi = normalizeWorkDpi(dpiValue);
-  if (!(widthPx > 0 && heightPx > 0)) return null;
-  return {
-    width: (widthPx * MM_PER_INCH) / dpi,
-    height: (heightPx * MM_PER_INCH) / dpi,
-    aspect: widthPx / heightPx,
-  };
+  const { dpi, ...rest } = work || {};
+  return { ...rest };
 }
 
 function createTextBlock(text = "Nuovo testo") {
@@ -307,23 +318,83 @@ function createTextBlock(text = "Nuovo testo") {
   };
 }
 
-function createInsideFrontCoverPage(marginsOverride) {
+function stripMarkdownSyntax(line) {
+  return String(line || "")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
+    .replace(/^\s*#{1,6}\s+/, "")
+    .replace(/^\s*>\s?/, "")
+    .replace(/^\s*[-*+]\s+/, "")
+    .replace(/^\s*\d+[.)]\s+/, "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .trim();
+}
+
+function estimateTextBlockHeight(text, width, fontSize = 16, borderWidthPct = 3, themeTitleSize = 26) {
+  const safeWidth = Math.max(40, Number(width) || 40);
+  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  let total = 0;
+  lines.forEach((rawLine) => {
+    if (!rawLine.trim()) {
+      total += fontSize * 0.55;
+      return;
+    }
+    const heading = rawLine.match(/^\s*(#{1,6})\s+/);
+    const headingLevel = heading ? heading[1].length : 0;
+    const scaleMap = { 1: 1, 2: 0.88, 3: 0.78, 4: 0.68, 5: 0.58, 6: 0.5 };
+    const effectiveFont = headingLevel ? Math.max(fontSize, themeTitleSize * (scaleMap[headingLevel] || 0.5)) : fontSize;
+    const charsPerLine = Math.max(8, Math.floor(safeWidth / Math.max(5, effectiveFont * 0.56)));
+    const plain = stripMarkdownSyntax(rawLine);
+    const wrappedLines = Math.max(1, Math.ceil(Math.max(1, plain.length) / charsPerLine));
+    const lineHeight = effectiveFont * (headingLevel ? 1.12 : 1.2);
+    total += wrappedLines * lineHeight + effectiveFont * 0.18;
+  });
+  const borderPx = borderPxFromPercent(safeWidth, borderWidthPct, 0, Math.max(48, safeWidth));
+  return Math.max(
+    Math.round(total + borderPx * 2 + 12),
+    Math.round(fontSize * 1.5 + borderPx * 2 + 12),
+  );
+}
+
+function createFullWidthTextBlock(spec, areaWidth, y, themeTitleSize = 26) {
+  const block = {
+    ...createTextBlock(spec.text),
+    x: 0,
+    y,
+    w: areaWidth,
+    fontSize: spec.fontSize ?? 16,
+    fontWeight: spec.fontWeight ?? 400,
+    align: spec.align || "left",
+    borderWidthPct: spec.borderWidthPct ?? 3,
+    color: spec.color,
+    bgColor: spec.bgColor,
+  };
+  return {
+    ...block,
+    h: estimateTextBlockHeight(block.text, block.w, block.fontSize, block.borderWidthPct, themeTitleSize),
+  };
+}
+
+function createInsideFrontCoverPage(marginsOverride, pageFormatId = "a4-portrait", themeCfg = null) {
   const page = createPage("inside-front-cover", "Seconda di copertina", marginsOverride);
   page.showPageNumber = false;
   page.bgColor = "#ffffff";
+  const area = getPageContentBounds(page, pageFormatId);
+  const topPad = Math.max(16, Math.round(area.height * 0.08));
   page.textBlocks = [
-    {
-      ...createTextBlock(
-        "Credits\nCuratela: Nome Curatore\nTesti: Nome Autore\nProgetto grafico: Studio / Designer\nFotografie: Autore / Archivio\nStampa: Tipografia\nAnno: 2026",
-      ),
-      x: 28,
-      y: 36,
-      w: 300,
-      h: 150,
-      fontSize: 12,
-      fontWeight: 400,
-      align: "left",
-    },
+    createFullWidthTextBlock(
+      {
+        text: "Credits\nCuratela: Nome Curatore\nTesti: Nome Autore\nProgetto grafico: Studio / Designer\nFotografie: Autore / Archivio\nStampa: Tipografia\nAnno: 2026",
+        fontSize: 12,
+        fontWeight: 400,
+        align: "left",
+        borderWidthPct: themeCfg?.defaultElementBorderPct ?? 3,
+      },
+      area.width,
+      topPad,
+      themeCfg?.titleFontSize ?? 26,
+    ),
   ];
   return page;
 }
@@ -342,42 +413,37 @@ function createPrefacePage(marginsOverride, bgColor = "#ffffff", borderPct = 3, 
   const titleMd = themeCfg?.defaultPrefaceTitleMd || DEFAULT_PREFACE_TITLE_MD;
   const bodyMd = themeCfg?.defaultPrefaceBodyMd || DEFAULT_PREFACE_BODY_MD;
   const area = getPageContentBounds(page, pageFormatId);
-  const padX = Math.max(12, Math.round(area.width * 0.04));
   const topPad = Math.max(14, Math.round(area.height * 0.06));
   const interGap = Math.max(10, Math.round(area.height * 0.035));
-  const bottomPad = Math.max(12, Math.round(area.height * 0.05));
-  const titleW = Math.max(120, area.width - padX * 2);
   const titleFont = Math.max(18, Math.round(area.height * 0.08));
-  const titleBorderPx = borderPxFromPercent(titleW, borderPct, 0, 64);
-  const titleH = Math.max(36, Math.round(titleFont * 1.25 + titleBorderPx * 2 + 10));
-  const bodyW = titleW;
   const bodyFont = Math.max(12, Math.round(area.height * 0.048));
-  const bodyBorderPx = borderPxFromPercent(bodyW, borderPct, 0, 64);
-  const bodyY = topPad + titleH + interGap;
-  const bodyH = Math.max(80, area.height - bodyY - bottomPad);
-  page.textBlocks = [
+  const titleBlock = createFullWidthTextBlock(
     {
-      ...createTextBlock(titleMd),
-      x: padX,
-      y: topPad,
-      w: titleW,
-      h: titleH,
+      text: titleMd,
       fontSize: titleFont,
       fontWeight: 700,
       align: "left",
       borderWidthPct: borderPct,
     },
+    area.width,
+    topPad,
+    themeCfg?.titleFontSize ?? 26,
+  );
+  const bodyBlock = createFullWidthTextBlock(
     {
-      ...createTextBlock(bodyMd),
-      x: padX,
-      y: bodyY,
-      w: bodyW,
-      h: Math.max(Math.round(bodyFont * 1.35 + bodyBorderPx * 2 + 12), bodyH),
+      text: bodyMd,
       fontSize: bodyFont,
       fontWeight: 400,
       align: "left",
       borderWidthPct: borderPct,
     },
+    area.width,
+    topPad + titleBlock.h + interGap,
+    themeCfg?.titleFontSize ?? 26,
+  );
+  page.textBlocks = [
+    titleBlock,
+    bodyBlock,
   ];
   return page;
 }
@@ -441,74 +507,102 @@ function createDefaultState(themeSeed = null) {
   const coverFront = createPage("cover-front", "Copertina", projectMargins);
   coverFront.showPageNumber = false;
   coverFront.bgColor = "#ffffff";
-  coverFront.textBlocks = [
-    {
-      ...createTextBlock("CATALOGO OPERE"),
-      x: 46,
-      y: 72,
-      w: 280,
-      h: 90,
-      fontSize: 24,
-      fontWeight: 700,
-      align: "center",
-      color: "#121212",
-    },
-    {
-      ...createTextBlock("Mostra / Collezione"),
-      x: 58,
-      y: 176,
-      w: 250,
-      h: 60,
-      fontSize: 14,
-      fontWeight: 500,
-      align: "center",
-      color: "#555555",
-    },
-  ];
+  {
+    const coverArea = getPageContentBounds(coverFront, "a4-portrait");
+    const titleBlock = createFullWidthTextBlock(
+      {
+        text: "CATALOGO OPERE",
+        fontSize: 24,
+        fontWeight: 700,
+        align: "center",
+        color: "#121212",
+        borderWidthPct: theme.defaultElementBorderPct ?? 3,
+      },
+      coverArea.width,
+      Math.max(40, Math.round(coverArea.height * 0.16)),
+      theme.titleFontSize,
+    );
+    const subtitleBlock = createFullWidthTextBlock(
+      {
+        text: "Mostra / Collezione",
+        fontSize: 14,
+        fontWeight: 500,
+        align: "center",
+        color: "#555555",
+        borderWidthPct: theme.defaultElementBorderPct ?? 3,
+      },
+      coverArea.width,
+      titleBlock.y + titleBlock.h + Math.max(16, Math.round(coverArea.height * 0.06)),
+      theme.titleFontSize,
+    );
+    coverFront.textBlocks = [titleBlock, subtitleBlock];
+  }
 
   const innerPage = createPage("page", "Pagina 1", projectMargins);
   innerPage.pageNumber = 1;
-  innerPage.textBlocks = [{ ...createTextBlock(theme.defaultIntroCuratorialMd || DEFAULT_INTRO_CURATORIAL_MD), x: 36, y: 36, w: 290, h: 120 }];
+  {
+    const innerArea = getPageContentBounds(innerPage, "a4-portrait");
+    innerPage.textBlocks = [
+      createFullWidthTextBlock(
+        {
+          text: theme.defaultIntroCuratorialMd || DEFAULT_INTRO_CURATORIAL_MD,
+          fontSize: theme.bodyFontSize,
+          fontWeight: 400,
+          align: "left",
+          borderWidthPct: theme.defaultElementBorderPct ?? 3,
+        },
+        innerArea.width,
+        Math.max(20, Math.round(innerArea.height * 0.05)),
+        theme.titleFontSize,
+      ),
+    ];
+  }
 
   const coverBack = createPage("cover-back", "Retro copertina", projectMargins);
   coverBack.showPageNumber = false;
   coverBack.bgColor = "#ffffff";
-  coverBack.textBlocks = [
-    {
-      ...createTextBlock(
-        theme.defaultBackSummaryMd || DEFAULT_BACK_SUMMARY_MD,
-      ),
-      x: 30,
-      y: 28,
-      w: 300,
-      h: 96,
-      fontSize: 13,
-      fontWeight: 500,
-      align: "left",
-    },
-    {
-      ...createTextBlock(
-        theme.defaultBackBioMd || DEFAULT_BACK_BIO_MD,
-      ),
-      x: 30,
-      y: 132,
-      w: 300,
-      h: 116,
-      fontSize: 12,
-      fontWeight: 400,
-      align: "left",
-    },
-    {
-      ...createTextBlock("Edizione 1/200\nCodice edizione: CAT-2026-001"),
-      x: 30,
-      y: 258,
-      w: 300,
-      h: 42,
-      fontSize: 11,
-      fontWeight: 500,
-      align: "left",
-    },
-  ];
+  {
+    const backArea = getPageContentBounds(coverBack, "a4-portrait");
+    const topPad = Math.max(18, Math.round(backArea.height * 0.05));
+    const gap = Math.max(10, Math.round(backArea.height * 0.03));
+    const summaryBlock = createFullWidthTextBlock(
+      {
+        text: theme.defaultBackSummaryMd || DEFAULT_BACK_SUMMARY_MD,
+        fontSize: 13,
+        fontWeight: 500,
+        align: "left",
+        borderWidthPct: theme.defaultElementBorderPct ?? 3,
+      },
+      backArea.width,
+      topPad,
+      theme.titleFontSize,
+    );
+    const bioBlock = createFullWidthTextBlock(
+      {
+        text: theme.defaultBackBioMd || DEFAULT_BACK_BIO_MD,
+        fontSize: 12,
+        fontWeight: 400,
+        align: "left",
+        borderWidthPct: theme.defaultElementBorderPct ?? 3,
+      },
+      backArea.width,
+      summaryBlock.y + summaryBlock.h + gap,
+      theme.titleFontSize,
+    );
+    const editionBlock = createFullWidthTextBlock(
+      {
+        text: "Edizione 1/200\nCodice edizione: CAT-2026-001",
+        fontSize: 11,
+        fontWeight: 500,
+        align: "left",
+        borderWidthPct: theme.defaultElementBorderPct ?? 3,
+      },
+      backArea.width,
+      bioBlock.y + bioBlock.h + gap,
+      theme.titleFontSize,
+    );
+    coverBack.textBlocks = [summaryBlock, bioBlock, editionBlock];
+  }
 
   return {
     projectTitle: "Progetto",
@@ -522,7 +616,7 @@ function createDefaultState(themeSeed = null) {
     pageFormat: "a4-portrait",
     summaryPageEdits: {},
     specialPages: {
-      insideFront: createInsideFrontCoverPage(projectMargins),
+      insideFront: createInsideFrontCoverPage(projectMargins, "a4-portrait", theme),
       insideBack: createInsideBackCoverPage(projectMargins),
     },
     layoutAssist: {
@@ -730,22 +824,20 @@ function summaryPagesFromWorks(
   for (let i = 0; i < works.length; i += chunkSize) chunks.push(works.slice(i, i + chunkSize));
   return chunks.map((chunk, idx) => {
     const area = getPageContentBounds({ margins: marginsOverride || { top: 28, right: 26, bottom: 38, left: 26 } }, pageFormatId);
-    const padX = Math.max(14, Math.round(area.width * 0.06));
     const titleY = Math.max(12, Math.round(area.height * 0.05));
-    const titleH = Math.max(34, Math.round(area.height * 0.12));
-    const listY = titleY + titleH + Math.max(8, Math.round(area.height * 0.03));
-    const listH = Math.max(80, area.height - listY - Math.max(8, Math.round(area.height * 0.03)));
-    const titleBlock = {
-      ...createTextBlock(idx === 0 ? "Elenco opere" : `Elenco opere (${idx + 1})`),
-      x: padX,
-      y: titleY,
-      w: Math.max(100, area.width - padX * 2),
-      h: titleH,
-      fontSize: Math.max(16, Math.round(area.height * 0.075)),
-      fontWeight: 700,
-      align: "left",
-      borderWidthPct: defaultBorderPct,
-    };
+    const gap = Math.max(8, Math.round(area.height * 0.03));
+    const titleBlock = createFullWidthTextBlock(
+      {
+        text: idx === 0 ? "Elenco opere" : `Elenco opere (${idx + 1})`,
+        fontSize: Math.max(16, Math.round(area.height * 0.075)),
+        fontWeight: 700,
+        align: "left",
+        borderWidthPct: defaultBorderPct,
+      },
+      area.width,
+      titleY,
+      Math.max(26, Math.round(area.height * 0.075)),
+    );
     const listText =
       chunk
         .map((work, rowIdx) => {
@@ -757,17 +849,18 @@ function summaryPagesFromWorks(
           return `${idx * chunkSize + rowIdx + 1}. **${title}** — *${author}* — anno: ${year} — **pag. ${pageLabel}**`;
         })
         .join("\n") || "Nessuna opera inserita.";
-    const listBlock = {
-      ...createTextBlock(listText),
-      x: padX,
-      y: listY,
-      w: Math.max(100, area.width - padX * 2),
-      h: listH,
-      fontSize: Math.max(11, Math.round(area.height * 0.045)),
-      fontWeight: 400,
-      align: "left",
-      borderWidthPct: defaultBorderPct,
-    };
+    const listBlock = createFullWidthTextBlock(
+      {
+        text: listText,
+        fontSize: Math.max(11, Math.round(area.height * 0.045)),
+        fontWeight: 400,
+        align: "left",
+        borderWidthPct: defaultBorderPct,
+      },
+      area.width,
+      titleBlock.y + titleBlock.h + gap,
+      Math.max(26, Math.round(area.height * 0.075)),
+    );
     const generated = {
       id: `summary_${idx}`,
       type: "summary-page",
@@ -926,7 +1019,6 @@ function cloneWorkDraft(work) {
     type: "",
     technique: "",
     dimensions: "",
-    dpi: DEFAULT_WORK_DPI,
     inventory: "",
     location: "",
     notes: "",
@@ -1039,19 +1131,18 @@ function clampNum(value, min, max) {
 function fitImageMmToBox(work, imageDimensions, maxW, maxH, fallbackAspect = 1) {
   const safeMaxW = Math.max(1, Number(maxW) || 1);
   const safeMaxH = Math.max(1, Number(maxH) || 1);
-  const physical = readImagePhysicalSizeMm(imageDimensions, work?.dpi);
-  const safeAspect = Number.isFinite(physical?.aspect) && physical.aspect > 0 ? physical.aspect : Math.max(0.01, Number(fallbackAspect) || 1);
-
-  let w = Number.isFinite(physical?.width) && physical.width > 0 ? physical.width : safeMaxW;
-  let h = Number.isFinite(physical?.height) && physical.height > 0 ? physical.height : w / safeAspect;
-  if (!(w > 0) || !(h > 0)) {
-    w = safeMaxW;
-    h = w / safeAspect;
+  const imageWidth = Number(imageDimensions?.width);
+  const imageHeight = Number(imageDimensions?.height);
+  const safeAspect =
+    imageWidth > 0 && imageHeight > 0
+      ? imageWidth / imageHeight
+      : Math.max(0.01, Number(fallbackAspect) || 1);
+  let w = safeMaxW;
+  let h = w / safeAspect;
+  if (h > safeMaxH) {
+    h = safeMaxH;
+    w = h * safeAspect;
   }
-
-  const downScale = Math.min(1, safeMaxW / w, safeMaxH / h);
-  w *= downScale;
-  h *= downScale;
   return {
     w: clampNum(Math.round(w), 1, safeMaxW),
     h: clampNum(Math.round(h), 1, safeMaxH),
@@ -1159,6 +1250,346 @@ function getRenderedConstraintBox(page, innerWidth, innerHeight, boundMode = "ma
     maxXForWidth: (w) => innerWidth - w,
     maxYForHeight: (h) => innerHeight - h,
   };
+}
+
+function getWorkAspectRatio(work, dimMap) {
+  const dims = dimMap?.get?.(work?.id) || null;
+  const width = Number(dims?.width);
+  const height = Number(dims?.height);
+  if (width > 0 && height > 0) return width / height;
+  return 1;
+}
+
+function fitAspectRatioToBox(aspectRatio, maxW, maxH) {
+  const safeAspect = Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 1;
+  const safeMaxW = Math.max(1, Number(maxW) || 1);
+  const safeMaxH = Math.max(1, Number(maxH) || 1);
+  let w = safeMaxW;
+  let h = w / safeAspect;
+  if (h > safeMaxH) {
+    h = safeMaxH;
+    w = h * safeAspect;
+  }
+  return {
+    w: clampNum(Math.round(w), 1, safeMaxW),
+    h: clampNum(Math.round(h), 1, safeMaxH),
+  };
+}
+
+function buildPlacementCaptionForWork(work, slotW, aspectRatio, themeCfg) {
+  const showCaption = themeCfg?.autoShowCaptionDefault ?? true;
+  const title = workLabel(work);
+  const meta = [work?.author, work?.year].filter(Boolean).join(", ");
+  const inline = [title, meta].filter(Boolean).join(" — ");
+  if (!showCaption) {
+    return { showCaption: false, text: "", h: 28, gap: 0 };
+  }
+  const approxChars = Math.max(18, Math.floor(Math.max(120, slotW || 0) / 7.4));
+  const preferOneLine = inline.length <= approxChars && aspectRatio >= 0.85;
+  const text = preferOneLine ? inline : [title, meta].filter(Boolean).join("\n");
+  const lines = !text ? 0 : preferOneLine ? 1 : inline.length > approxChars * 1.8 ? 3 : 2;
+  const h = lines <= 1 ? 36 : lines === 2 ? 52 : 66;
+  return {
+    showCaption: true,
+    text,
+    h,
+    gap: text ? 8 : 0,
+  };
+}
+
+function createPlacementForSlotWork(work, slot, themeCfg, aspectRatio, zIndex = 100) {
+  const safeSlot = {
+    x: Math.round(slot?.x || 0),
+    y: Math.round(slot?.y || 0),
+    w: Math.max(40, Math.round(slot?.w || 40)),
+    h: Math.max(40, Math.round(slot?.h || 40)),
+  };
+  const caption = buildPlacementCaptionForWork(work, safeSlot.w, aspectRatio, themeCfg);
+  const imageBoxH = Math.max(40, safeSlot.h - (caption.showCaption ? caption.h + caption.gap : 0));
+  const fitted = fitAspectRatioToBox(aspectRatio, safeSlot.w, imageBoxH);
+  const x = Math.round(safeSlot.x + (safeSlot.w - fitted.w) / 2);
+  const y = Math.round(safeSlot.y + (imageBoxH - fitted.h) / 2);
+  const placement = applyThemeDefaultsToPlacement(createPlacementForWork(work.id, x, y), themeCfg);
+  placement.zIndex = zIndex;
+  placement.w = fitted.w;
+  placement.h = fitted.h;
+  placement.showCaption = caption.showCaption;
+  placement.captionOverride = caption.text;
+  placement.captionX = safeSlot.x;
+  placement.captionY = Math.round(safeSlot.y + imageBoxH + (caption.showCaption ? caption.gap : 0));
+  placement.captionW = safeSlot.w;
+  placement.captionH = caption.showCaption ? caption.h : 28;
+  return placement;
+}
+
+function createPlacementForExactFrame(work, x, y, w, h, caption, themeCfg, zIndex = 100) {
+  const placement = applyThemeDefaultsToPlacement(
+    createPlacementForWork(work.id, Math.round(x), Math.round(y)),
+    themeCfg,
+  );
+  placement.zIndex = zIndex;
+  placement.w = Math.max(40, Math.round(w));
+  placement.h = Math.max(40, Math.round(h));
+  placement.showCaption = caption.showCaption;
+  placement.captionOverride = caption.text;
+  placement.captionX = Math.round(x);
+  placement.captionY = Math.round(y + h + (caption.showCaption ? caption.gap : 0));
+  placement.captionW = Math.max(40, Math.round(w));
+  placement.captionH = caption.showCaption ? caption.h : 28;
+  return placement;
+}
+
+function distributeRowWidths(rowItems, totalWidth, gapX, imageHeight) {
+  const availableWidth = Math.max(40, totalWidth - gapX * Math.max(0, rowItems.length - 1));
+  const rawWidths = rowItems.map((item) => Math.max(40, imageHeight * item.aspect));
+  const rawTotal = rawWidths.reduce((sum, width) => sum + width, 0);
+  const scaledWidths = rawWidths.map((width) => (width * availableWidth) / Math.max(1, rawTotal));
+  const widths = scaledWidths.map((width) => Math.max(40, Math.floor(width)));
+  let used = widths.reduce((sum, width) => sum + width, 0);
+  let remainder = Math.max(0, availableWidth - used);
+  const order = scaledWidths
+    .map((width, idx) => ({ idx, frac: width - Math.floor(width) }))
+    .sort((a, b) => b.frac - a.frac);
+  let orderIdx = 0;
+  while (remainder > 0 && order.length) {
+    widths[order[orderIdx % order.length].idx] += 1;
+    remainder -= 1;
+    orderIdx += 1;
+  }
+  return widths;
+}
+
+function buildJustifiedRowPlacements(rowItems, y, areaW, gapX, themeCfg, zStart = 100) {
+  if (!rowItems.length) return { placements: [], rowHeight: 0 };
+  const aspectSum = rowItems.reduce((sum, item) => sum + item.aspect, 0);
+  const baseImageHeight = Math.max(40, (areaW - gapX * Math.max(0, rowItems.length - 1)) / Math.max(0.1, aspectSum));
+  const widths = distributeRowWidths(rowItems, areaW, gapX, baseImageHeight);
+  const rowMeta = rowItems.map((item, idx) => {
+    const caption = buildPlacementCaptionForWork(item.work, widths[idx], item.aspect, themeCfg);
+    return { ...item, width: widths[idx], caption };
+  });
+  const maxCaptionFootprint = rowMeta.reduce(
+    (max, item) => Math.max(max, item.caption.showCaption ? item.caption.h + item.caption.gap : 0),
+    0,
+  );
+  const rowHeight = Math.max(40, Math.round(baseImageHeight + maxCaptionFootprint));
+  let x = 0;
+  const placements = rowMeta.map((item, idx) => {
+    const slotW = item.width;
+    const placement = createPlacementForExactFrame(
+      item.work,
+      x,
+      y,
+      slotW,
+      baseImageHeight,
+      item.caption,
+      themeCfg,
+      zStart + idx * 10,
+    );
+    x += slotW + gapX;
+    return placement;
+  });
+  return { placements, rowHeight };
+}
+
+function buildJustifiedLayoutFromRowSizes(works, rowSizes, areaW, areaH, dimMap, themeCfg) {
+  const gapX = 10;
+  const gapY = 10;
+  const items = (works || []).map((work) => ({ work, aspect: getWorkAspectRatio(work, dimMap) }));
+  const placements = [];
+  let cursor = 0;
+  let y = 0;
+  rowSizes.forEach((rowSize) => {
+    const rowItems = items.slice(cursor, cursor + rowSize);
+    if (!rowItems.length) return;
+    const row = buildJustifiedRowPlacements(rowItems, y, areaW, gapX, themeCfg, 100 + placements.length * 10);
+    placements.push(...row.placements);
+    y += row.rowHeight + gapY;
+    cursor += rowItems.length;
+  });
+  const totalHeight = placements.length ? y - gapY : 0;
+  return {
+    placements,
+    valid: totalHeight <= areaH + 1,
+    fillRatio: totalHeight / Math.max(1, areaH),
+    totalHeight,
+    rowCount: rowSizes.length,
+  };
+}
+
+function buildFixedPresetPlacements(presetId, works, areaW, areaH, dimMap, themeCfg) {
+  if (presetId === "single") {
+    const work = works?.[0];
+    if (!work) return { placements: [], valid: true, fillRatio: 0, totalHeight: 0, rowCount: 0 };
+    const aspect = getWorkAspectRatio(work, dimMap);
+    const placement = createPlacementForSlotWork(work, { x: 0, y: 0, w: areaW, h: areaH }, themeCfg, aspect, 100);
+    const usedHeight = placement.h + (placement.showCaption === false ? 0 : (placement.captionH || 0) + 8);
+    return {
+      placements: [placement],
+      valid: usedHeight <= areaH + 1,
+      fillRatio: usedHeight / Math.max(1, areaH),
+      totalHeight: usedHeight,
+      rowCount: 1,
+    };
+  }
+  const count = Math.min(works?.length || 0, presetId === "double" ? 2 : 4);
+  const candidates = [];
+  if (presetId === "double" && count >= 2) candidates.push([2], [1, 1]);
+  if (presetId === "quad" && count >= 4) candidates.push([4], [2, 2], [3, 1]);
+  if (!candidates.length) candidates.push([count]);
+  let best = null;
+  candidates.forEach((rowSizes) => {
+    const layout = buildJustifiedLayoutFromRowSizes(works.slice(0, count), rowSizes, areaW, areaH, dimMap, themeCfg);
+    if (!layout.valid) return;
+    const widthBias = rowSizes.reduce((sum, rowSize) => sum + rowSize, 0) / Math.max(1, count);
+    const score = layout.fillRatio + widthBias * 0.02 - rowSizes.length * 0.01;
+    if (!best || score > best.score) {
+      best = { ...layout, score };
+    }
+  });
+  if (best) return best;
+  return buildJustifiedLayoutFromRowSizes(works.slice(0, count), [count], areaW, areaH, dimMap, themeCfg);
+}
+
+function buildMasonryRows(items, areaW, targetRowHeight, minPerRow, maxPerRow, gapX) {
+  const rows = [];
+  let current = [];
+  let aspectSum = 0;
+  items.forEach((item) => {
+    current.push(item);
+    aspectSum += item.aspect;
+    const projectedWidth = targetRowHeight * aspectSum + gapX * Math.max(0, current.length - 1);
+    const shouldClose = current.length >= minPerRow && (projectedWidth >= areaW || current.length >= maxPerRow);
+    if (shouldClose) {
+      rows.push(current);
+      current = [];
+      aspectSum = 0;
+    }
+  });
+  if (current.length) rows.push(current);
+  while (rows.length > 1 && rows[rows.length - 1].length < minPerRow) {
+    const tail = rows[rows.length - 1];
+    const prev = rows[rows.length - 2];
+    if (prev.length <= minPerRow) break;
+    tail.unshift(prev.pop());
+  }
+  return rows;
+}
+
+function buildMasonryPlacements(works, areaW, areaH, dimMap, themeCfg) {
+  const items = (works || []).map((work) => ({ work, aspect: getWorkAspectRatio(work, dimMap) }));
+  if (!items.length) return { placements: [], valid: true, fillRatio: 0, rowCount: 0, totalHeight: 0 };
+  if (items.length < 3) return buildFixedPresetPlacements(items.length === 1 ? "single" : "double", works, areaW, areaH, dimMap, themeCfg);
+  const gapX = 10;
+  const gapY = 10;
+  const minPerRow = Math.min(3, items.length);
+  const maxPerRow = Math.max(minPerRow, areaW >= areaH ? 6 : 5);
+  const avgAspect = items.reduce((sum, item) => sum + item.aspect, 0) / items.length;
+  const targetRowHeight = Math.max(52, Math.min(areaH * 0.42, (areaW - gapX * 2) / Math.max(0.5, avgAspect * 3)));
+  const rows = buildMasonryRows(items, areaW, targetRowHeight, minPerRow, maxPerRow, gapX);
+  const placements = [];
+  let y = 0;
+  rows.forEach((row) => {
+    const built = buildJustifiedRowPlacements(row, y, areaW, gapX, themeCfg, 100 + placements.length * 10);
+    if (y + built.rowHeight > areaH + 1) return;
+    placements.push(...built.placements);
+    y += built.rowHeight + gapY;
+  });
+  const totalHeight = placements.length ? y - gapY : 0;
+  return {
+    placements,
+    valid: totalHeight <= areaH + 1,
+    fillRatio: totalHeight / Math.max(1, areaH),
+    rowCount: rows.length,
+    totalHeight,
+  };
+}
+
+function resolveLayoutArea(pageFormatId, margins, boundsOverride = null) {
+  if (boundsOverride?.width > 0 && boundsOverride?.height > 0) {
+    return {
+      width: Math.round(boundsOverride.width),
+      height: Math.round(boundsOverride.height),
+      rendered: true,
+    };
+  }
+  const probePage = createPage("page", "Pagina opere", margins);
+  const area = getPageContentBounds(probePage, pageFormatId);
+  return { ...area, rendered: false };
+}
+
+function buildLayoutPlacementsForPreset(works, presetId, pageFormatId, margins, dimMap, themeCfg, boundsOverride = null) {
+  const area = resolveLayoutArea(pageFormatId, margins, boundsOverride);
+  if (presetId === "single" || presetId === "double" || presetId === "quad") {
+    return buildFixedPresetPlacements(presetId, works, area.width, area.height, dimMap, themeCfg).placements;
+  }
+  if (presetId === "masonry") {
+    return buildMasonryPlacements(works, area.width, area.height, dimMap, themeCfg).placements;
+  }
+  return [];
+}
+
+function buildLayoutPageFromWorks(works, presetId, pageFormatId, margins, dimMap, themeCfg, boundsOverride = null, boundMode = "margins") {
+  const page = createPage("page", works.length === 1 ? workLabel(works[0]) : "Pagina opere", margins);
+  page.bgColor = themeCfg?.defaultPageBgColor || "#ffffff";
+  page.placements = buildLayoutPlacementsForPreset(works, presetId, pageFormatId, margins, dimMap, themeCfg, boundsOverride);
+  const themed = applyThemeAutoDefaultsToPage(page, themeCfg);
+  return boundsOverride?.width > 0 && boundsOverride?.height > 0
+    ? normalizePageElementsToRenderedBounds(themed, boundsOverride.width, boundsOverride.height, boundMode)
+    : normalizePageElementsToBounds(themed, pageFormatId, boundMode);
+}
+
+function chooseMasonryCatalogChunk(works, pageFormatId, margins, dimMap, themeCfg, boundsOverride = null) {
+  const area = resolveLayoutArea(pageFormatId, margins, boundsOverride);
+  let best = null;
+  const maxItems = Math.min(18, works.length);
+  for (let count = 3; count <= maxItems; count += 1) {
+    const candidate = buildMasonryPlacements(works.slice(0, count), area.width, area.height, dimMap, themeCfg);
+    if (!candidate.valid) break;
+    const score = candidate.fillRatio + count * 0.03 - candidate.rowCount * 0.015;
+    if (!best || score > best.score) {
+      best = {
+        count,
+        placements: candidate.placements,
+        score,
+      };
+    }
+  }
+  if (best) return best;
+  const fallbackCount = Math.min(works.length, works.length >= 2 ? 2 : 1);
+  const fallbackPreset = fallbackCount >= 2 ? "double" : "single";
+  return {
+    count: fallbackCount,
+    placements: buildLayoutPlacementsForPreset(works.slice(0, fallbackCount), fallbackPreset, pageFormatId, margins, dimMap, themeCfg, boundsOverride),
+  };
+}
+
+function buildCatalogLayoutPages(works, presetId, pageFormatId, margins, dimMap, themeCfg, boundsOverride = null, boundMode = "margins") {
+  const pages = [];
+  if (!works.length) return pages;
+  if (presetId !== "masonry") {
+    const preset = LAYOUT_PRESETS.find((item) => item.id === presetId);
+    const chunkSize = preset?.fixedCount || 1;
+    for (let i = 0; i < works.length; i += chunkSize) {
+      pages.push(buildLayoutPageFromWorks(works.slice(i, i + chunkSize), presetId, pageFormatId, margins, dimMap, themeCfg, boundsOverride, boundMode));
+    }
+    return pages;
+  }
+  for (let i = 0; i < works.length;) {
+    const chunk = chooseMasonryCatalogChunk(works.slice(i), pageFormatId, margins, dimMap, themeCfg, boundsOverride);
+    const chunkWorks = works.slice(i, i + chunk.count);
+    const page = createPage("page", chunkWorks.length === 1 ? workLabel(chunkWorks[0]) : "Pagina opere", margins);
+    page.bgColor = themeCfg?.defaultPageBgColor || "#ffffff";
+    page.placements = chunk.placements;
+    const themed = applyThemeAutoDefaultsToPage(page, themeCfg);
+    pages.push(
+      boundsOverride?.width > 0 && boundsOverride?.height > 0
+        ? normalizePageElementsToRenderedBounds(themed, boundsOverride.width, boundsOverride.height, boundMode)
+        : normalizePageElementsToBounds(themed, pageFormatId, boundMode),
+    );
+    i += chunk.count;
+  }
+  return pages;
 }
 
 function normalizeTextBlockToBounds(txt, box) {
@@ -1277,10 +1708,10 @@ export default function App() {
   const [bookView, setBookView] = useState({ zoom: 1, panX: 0, panY: 0 });
   const [topbarMenuOpen, setTopbarMenuOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [layoutPanelOpen, setLayoutPanelOpen] = useState(false);
+  const [selectedLayoutPreset, setSelectedLayoutPreset] = useState("masonry");
   const topbarActionsRef = useRef(null);
   const [pageMetrics, setPageMetrics] = useState({});
-  const [autoLayoutMode, setAutoLayoutMode] = useState("hero");
-  const autoLayoutModeRef = useRef("hero");
   const [savedProjects, setSavedProjects] = useState(() => loadProjectsIndex());
   const [currentProjectId, setCurrentProjectId] = useState(null);
   const [projectDialog, setProjectDialog] = useState({ open: false, mode: "save", name: "" });
@@ -1288,10 +1719,6 @@ export default function App() {
   const [currentThemeId, setCurrentThemeId] = useState(null);
   const [themeDialog, setThemeDialog] = useState({ open: false, mode: "save", name: "" });
   const [printProgress, setPrintProgress] = useState({ active: false, current: 0, total: 0, message: "" });
-
-  useEffect(() => {
-    autoLayoutModeRef.current = autoLayoutMode;
-  }, [autoLayoutMode]);
 
   useEffect(() => {
     function onDocPointerDown(e) {
@@ -1653,7 +2080,7 @@ export default function App() {
       const imageFile = imageFiles[0];
       const imageUrl = await readImageFile(imageFile);
       const titleFromName = imageFile.name.replace(/\.[^.]+$/, "");
-      openCreateWork({ title: titleFromName, imageUrl, _imageFile: imageFile, dpi: DEFAULT_WORK_DPI });
+      openCreateWork({ title: titleFromName, imageUrl, _imageFile: imageFile });
       return;
     }
 
@@ -1801,108 +2228,111 @@ export default function App() {
     patchState((prev) => ({ ...prev, selectedElement: { pageId: activeEditablePage.id, kind: "placement", elementId: placement.id } }));
   }
 
-  function getAutoLayoutChunkSize(mode) {
-    if (mode === "two-cols") return 2;
-    if (mode === "grid4") return 4;
-    return 1;
-  }
-
-  function buildAutoLayoutPageForWorks(worksChunk, pageFormat, margins, dimMap, measuredBounds, mode, layoutAssistCfg, themeCfg) {
-    const page = createPage("page", worksChunk.length === 1 ? workLabel(worksChunk[0]) : "Pagina opere", margins);
-    page.bgColor = "#fbfbfb";
-    const showCaption = themeCfg?.autoShowCaptionDefault ?? true;
-    const area = getPageContentBounds(page, pageFormat);
-    const base = { x: 0, y: 0, w: Math.max(80, area.width), h: Math.max(100, area.height) };
-    const gap = 8;
-    const count = Math.max(1, worksChunk.length);
-
-    let slots = [];
-    if (mode === "hero" || count === 1) {
-      slots = [{ x: base.x, y: base.y, w: base.w, h: base.h }];
-    } else if (mode === "two-cols") {
-      const portrait = base.h >= base.w;
-      if (portrait) {
-        const h1 = Math.floor((base.h - gap) / 2);
-        const h2 = base.h - h1 - gap;
-        slots = [
-          { x: base.x, y: base.y, w: base.w, h: h1 },
-          { x: base.x, y: base.y + h1 + gap, w: base.w, h: h2 },
-        ];
-      } else {
-        const w1 = Math.floor((base.w - gap) / 2);
-        const w2 = base.w - w1 - gap;
-        slots = [
-          { x: base.x, y: base.y, w: w1, h: base.h },
-          { x: base.x + w1 + gap, y: base.y, w: w2, h: base.h },
-        ];
-      }
-    } else {
-      const w1 = Math.floor((base.w - gap) / 2);
-      const w2 = base.w - w1 - gap;
-      const h1 = Math.floor((base.h - gap) / 2);
-      const h2 = base.h - h1 - gap;
-      slots = [
-        { x: base.x, y: base.y, w: w1, h: h1 },
-        { x: base.x + w1 + gap, y: base.y, w: w2, h: h1 },
-        { x: base.x, y: base.y + h1 + gap, w: w1, h: h2 },
-        { x: base.x + w1 + gap, y: base.y + h1 + gap, w: w2, h: h2 },
-      ];
+  function getActivePageLayoutBounds(page) {
+    const measured = pageMetrics?.[page.id];
+    if (measured?.width && measured?.height) {
+      return { width: measured.width, height: measured.height };
     }
-
-    page.placements = worksChunk.map((work, idx) => {
-      const slot = slots[idx] || slots[slots.length - 1] || { x: 0, y: 0, w: base.w, h: base.h };
-      const captionH = showCaption ? (mode === "grid4" ? 34 : 46) : 0;
-      const captionGap = showCaption ? 6 : 0;
-      const slotW = Math.max(40, slot.w);
-      const imgH = Math.max(40, slot.h - captionH - captionGap);
-      const imageDimensions = dimMap?.get(work.id) || null;
-      const fallbackAspect =
-        Number(imageDimensions?.width) > 0 && Number(imageDimensions?.height) > 0
-          ? Number(imageDimensions.width) / Math.max(1, Number(imageDimensions.height))
-          : slotW / Math.max(1, imgH);
-      const fitted = fitImageMmToBox(work, imageDimensions, slotW, imgH, fallbackAspect);
-      const imageX = slot.x + Math.round((slotW - fitted.w) / 2);
-      const imageY = slot.y + Math.round((imgH - fitted.h) / 2);
-      const p = createPlacementForWork(work.id, slot.x, slot.y);
-      p.x = imageX;
-      p.y = imageY;
-      p.w = fitted.w;
-      p.h = fitted.h;
-      p.showCaption = showCaption;
-      p.captionX = slot.x;
-      p.captionY = slot.y + imgH + captionGap;
-      p.captionW = slotW;
-      p.captionH = showCaption ? captionH : 28;
-      p.captionOverride = [workLabel(work), [work.author, work.year].filter(Boolean).join(", ")].filter(Boolean).join("\n");
-      p.zIndex = 100 + idx * 10;
-      return p;
-    });
-
-    return normalizePageElementsToBounds(applyThemeAutoDefaultsToPage(page, themeCfg || state.theme), pageFormat, "margins");
+    const fallback = getPageContentBounds(page, state.pageFormat);
+    return { width: fallback.width, height: fallback.height };
   }
 
-  async function autoGeneratePagesFromCatalog() {
-    const works = state.works || [];
+  function findEditablePageById(snapshot, pageId) {
+    return (
+      snapshot.pages.find((page) => page.id === pageId) ||
+      (snapshot.specialPages?.insideFront?.id === pageId ? snapshot.specialPages.insideFront : null) ||
+      (snapshot.specialPages?.insideBack?.id === pageId ? snapshot.specialPages.insideBack : null) ||
+      null
+    );
+  }
+
+  function collectWorksForLayout(page, presetId, snapshot, { onlyPageWorks = false } = {}) {
+    const pageWorkIds = [];
+    (page?.placements || []).forEach((placement) => {
+      if (placement?.workId && !pageWorkIds.includes(placement.workId)) pageWorkIds.push(placement.workId);
+    });
+    const pageWorks = pageWorkIds
+      .map((workId) => snapshot.works.find((work) => work.id === workId))
+      .filter(Boolean);
+    if (onlyPageWorks) return pageWorks;
+    const selected = snapshot.selectedWorkId ? snapshot.works.find((work) => work.id === snapshot.selectedWorkId) : null;
+    const remainingWorks = snapshot.works.filter((work) => !pageWorks.some((pageWork) => pageWork.id === work.id));
+    if (!pageWorks.length && selected) {
+      return [selected, ...remainingWorks.filter((work) => work.id !== selected.id)];
+    }
+    const preset = LAYOUT_PRESETS.find((item) => item.id === presetId);
+    if (preset?.fixedCount) {
+      const filled = [...pageWorks];
+      remainingWorks.forEach((work) => {
+        if (filled.length < preset.fixedCount) filled.push(work);
+      });
+      return filled.slice(0, preset.fixedCount);
+    }
+    if (pageWorks.length) return pageWorks.slice(0, 8);
+    return remainingWorks.slice(0, 8);
+  }
+
+  async function applySelectedLayoutToActivePage() {
+    const targetPage = activeEditablePage;
+    if (!targetPage || targetPage.type === "summary") return;
+    const works = collectWorksForLayout(targetPage, selectedLayoutPreset, state, { onlyPageWorks: true });
     if (!works.length) return;
-    const effectiveAutoLayoutMode = autoLayoutModeRef.current || autoLayoutMode || "hero";
     const dimensions = await Promise.all(
-      works.map(async (w) => {
-        const dims = await readImageDimensions(w.imageUrl);
-        return [w.id, dims];
-      }),
+      works.map(async (work) => [work.id, await readImageDimensions(work.imageUrl)]),
     );
     const dimMap = new Map(dimensions);
-    const metricValues = Object.values(pageMetrics || {});
-    const measuredBounds = metricValues.find((m) => m?.width && m?.height) || null;
-
     patchState((prev) => {
-      const boundMode = prev.layoutAssist?.boundMode || "margins";
+      const page = findEditablePageById(prev, targetPage.id);
+      if (!page || page.type === "summary") return prev;
+      const nextWorks = collectWorksForLayout(page, selectedLayoutPreset, prev, { onlyPageWorks: true });
+      if (!nextWorks.length) return prev;
+      const rebuiltPage = buildLayoutPageFromWorks(
+        nextWorks,
+        selectedLayoutPreset,
+        prev.pageFormat,
+        prev.theme?.pageMargins,
+        dimMap,
+        prev.theme,
+        getActivePageLayoutBounds(page),
+        prev.layoutAssist?.boundMode || "margins",
+      );
+      const patchSinglePage = (candidate) =>
+        candidate?.id === page.id
+          ? {
+              ...candidate,
+              bgColor: rebuiltPage.bgColor,
+              placements: rebuiltPage.placements,
+            }
+          : candidate;
+      return {
+        ...prev,
+        pages: (prev.pages || []).map((candidate) => patchSinglePage(candidate) || candidate),
+        specialPages: {
+          insideFront: patchSinglePage(prev.specialPages?.insideFront),
+          insideBack: patchSinglePage(prev.specialPages?.insideBack),
+        },
+        activePageId: page.id,
+        selectedElement: rebuiltPage.placements[0] ? { pageId: page.id, kind: "placement", elementId: rebuiltPage.placements[0].id } : null,
+      };
+    });
+  }
+
+  async function generateCatalogFromLayoutPreset() {
+    const works = state.works || [];
+    if (!works.length) return;
+    const dimensions = await Promise.all(
+      works.map(async (work) => [work.id, await readImageDimensions(work.imageUrl)]),
+    );
+    const dimMap = new Map(dimensions);
+    patchState((prev) => {
       const defaultBg = prev.theme?.defaultPageBgColor || "#ffffff";
+      const representativeBounds =
+        Object.values(pageMetrics || {}).find((metric) => metric?.width > 0 && metric?.height > 0) || null;
       const frontBase = prev.pages[0] || createDefaultState().pages[0];
       const backBase = prev.pages[prev.pages.length - 1] || createDefaultState().pages.at(-1);
-      const front = { ...frontBase, placements: [], bgColor: defaultBg };
-      const back = { ...backBase, placements: [], bgColor: defaultBg };
-      const existingPreface = (prev.pages || []).find((p) => p?.title === "Prefazione" && p.type === "page");
+      const front = { ...frontBase, placements: [], bgColor: defaultBg, margins: { ...(prev.theme?.pageMargins || frontBase.margins) } };
+      const back = { ...backBase, placements: [], bgColor: defaultBg, margins: { ...(prev.theme?.pageMargins || backBase.margins) } };
+      const existingPreface = (prev.pages || []).find((page) => page?.title === "Prefazione" && page.type === "page");
       let prefacePage = createPrefacePage(
         prev.theme?.pageMargins,
         defaultBg,
@@ -1916,61 +2346,42 @@ export default function App() {
           ...existingPreface,
           id: existingPreface.id,
           margins: { ...(prev.theme?.pageMargins || prefacePage.margins) },
-          placements: [], // la prefazione resta testuale nel flusso auto
+          placements: [],
           textBlocks: existingPreface.textBlocks || prefacePage.textBlocks,
         };
       }
-      const chunkSize = getAutoLayoutChunkSize(effectiveAutoLayoutMode);
-      const chunks = [];
-      for (let i = 0; i < prev.works.length; i += chunkSize) chunks.push(prev.works.slice(i, i + chunkSize));
-      const autoPages = chunks.map((chunk) =>
-        buildAutoLayoutPageForWorks(
-          chunk,
-          prev.pageFormat,
-          prev.theme?.pageMargins,
-          dimMap,
-          undefined,
-          effectiveAutoLayoutMode,
-          prev.layoutAssist,
-          prev.theme,
-        ),
+      const autoPages = buildCatalogLayoutPages(
+        prev.works,
+        selectedLayoutPreset,
+        prev.pageFormat,
+        prev.theme?.pageMargins,
+        dimMap,
+        prev.theme,
+        representativeBounds,
+        prev.layoutAssist?.boundMode || "margins",
       );
-      const frontPage = { ...front, margins: { ...(prev.theme?.pageMargins || front.margins) } };
-      const backPage = { ...back, margins: { ...(prev.theme?.pageMargins || back.margins) } };
       const normalizedPreface = existingPreface
         ? { ...prefacePage, margins: { ...(prev.theme?.pageMargins || prefacePage.margins) } }
         : normalizePageElementsToBounds(prefacePage, prev.pageFormat, "margins");
-      const normalizedAutoPages = autoPages.length ? autoPages : [createPage("page", "Pagina 1", prev.theme?.pageMargins)];
-      const pages = [frontPage, normalizedPreface, ...normalizedAutoPages, backPage];
-
-      const nextSpecialPages = {
-        insideFront: prev.specialPages?.insideFront
-          ? { ...prev.specialPages.insideFront, placements: [] }
-          : prev.specialPages?.insideFront,
-        insideBack: prev.specialPages?.insideBack
-          ? { ...prev.specialPages.insideBack, placements: [] }
-          : prev.specialPages?.insideBack,
-      };
+      const pages = [front, normalizedPreface, ...autoPages, back];
       return {
         ...prev,
         pages,
-        specialPages: nextSpecialPages,
-        activePageId: prefacePage.id,
+        specialPages: {
+          insideFront: prev.specialPages?.insideFront
+            ? { ...prev.specialPages.insideFront, placements: [] }
+            : prev.specialPages?.insideFront,
+          insideBack: prev.specialPages?.insideBack
+            ? { ...prev.specialPages.insideBack, placements: [] }
+            : prev.specialPages?.insideBack,
+        },
+        activePageId: normalizedPreface.id,
         currentSpread: 0,
-        selectedElement: prefacePage.textBlocks?.[0]
-          ? { pageId: prefacePage.id, kind: "text", elementId: prefacePage.textBlocks[0].id }
+        selectedElement: normalizedPreface.textBlocks?.[0]
+          ? { pageId: normalizedPreface.id, kind: "text", elementId: normalizedPreface.textBlocks[0].id }
           : null,
       };
     });
-  }
-
-  function getActivePageLayoutBounds(page) {
-    const measured = pageMetrics?.[page.id];
-    if (measured?.width && measured?.height) {
-      return { width: measured.width, height: measured.height };
-    }
-    const fallback = getPageContentBounds(page, state.pageFormat);
-    return { width: fallback.width, height: fallback.height };
   }
 
   async function addWorkToPageAtPosition(pageId, workId, x, y) {
@@ -2054,115 +2465,6 @@ export default function App() {
         activePageId: targetPageId,
         selectedElement: { pageId: targetPageId, kind: "placement", elementId: placementId },
       };
-    });
-  }
-
-  function ensurePlacementsForLayout(page, targetCount) {
-    const current = [...(page.placements || [])];
-    if (current.length >= targetCount) return current.slice(0, targetCount);
-    const pool = state.works.filter((w) => !current.some((p) => p.workId === w.id));
-    for (const work of pool) {
-      current.push({
-        ...applyThemeDefaultsToPlacement(createPlacementForWork(work.id, 20, 20), state.theme),
-        zIndex: nextPlacementLayerZ({ placements: current }),
-      });
-      if (current.length >= targetCount) break;
-    }
-    return current;
-  }
-
-  function applyLayoutPreset(preset) {
-    const page = activeEditablePage;
-    if (!page || page.type === "summary") return;
-    patchPage(page.id, (prevPage) => {
-      const measured = getActivePageLayoutBounds(prevPage);
-      const areaW = Math.max(140, measured.width);
-      const areaH = Math.max(180, measured.height);
-      let placements = [...(prevPage.placements || [])];
-      const fitPlacementInSlot = (placement, slot, defaultCaptionH, captionGap) => {
-        const showCaption = placement.showCaption !== false;
-        const capH = showCaption ? defaultCaptionH : 0;
-        const gap = showCaption ? captionGap : 0;
-        const imageAreaH = Math.max(40, slot.h - capH - gap);
-        const ratio = Math.max(0.01, Number(placement.w || 1) / Math.max(1, Number(placement.h || 1)));
-        let w = Math.max(40, slot.w);
-        let h = w / ratio;
-        if (h > imageAreaH) {
-          h = imageAreaH;
-          w = h * ratio;
-        }
-        w = clampNum(Math.round(w), 40, Math.max(40, slot.w));
-        h = clampNum(Math.round(h), 40, Math.max(40, imageAreaH));
-        const x = Math.round(slot.x + (slot.w - w) / 2);
-        const y = Math.round(slot.y + (imageAreaH - h) / 2);
-        return {
-          ...placement,
-          x,
-          y,
-          w,
-          h,
-          captionX: slot.x,
-          captionY: slot.y + imageAreaH + gap,
-          captionW: Math.max(40, slot.w),
-          captionH: showCaption ? defaultCaptionH : 28,
-        };
-      };
-
-      if (preset === "hero") {
-        placements = ensurePlacementsForLayout(prevPage, 1);
-        if (!placements.length) return prevPage;
-        const p = { ...placements[0] };
-        const slot = { x: 0, y: 0, w: areaW, h: areaH };
-        placements = [fitPlacementInSlot(p, slot, 50, 8)];
-      }
-
-      if (preset === "two-cols") {
-        placements = ensurePlacementsForLayout(prevPage, 2);
-        if (!placements.length) return prevPage;
-        const gap = 12;
-        const portrait = areaH >= areaW;
-        if (portrait) {
-          const h1 = Math.floor((areaH - gap) / 2);
-          const h2 = areaH - h1 - gap;
-          const slots = [
-            { x: 0, y: 0, w: areaW, h: h1 },
-            { x: 0, y: h1 + gap, w: areaW, h: h2 },
-          ];
-          placements = placements.slice(0, 2).map((p, i) => fitPlacementInSlot(p, slots[i], 48, 8));
-        } else {
-          const w1 = Math.floor((areaW - gap) / 2);
-          const w2 = areaW - w1 - gap;
-          const slots = [
-            { x: 0, y: 0, w: w1, h: areaH },
-            { x: w1 + gap, y: 0, w: w2, h: areaH },
-          ];
-          placements = placements.slice(0, 2).map((p, i) => fitPlacementInSlot(p, slots[i], 48, 8));
-        }
-      }
-
-      if (preset === "grid4") {
-        placements = ensurePlacementsForLayout(prevPage, 4);
-        if (!placements.length) return prevPage;
-        const cols = 2;
-        const rows = 2;
-        const gapX = 12;
-        const gapY = 12;
-        const w = Math.round((areaW - gapX) / cols);
-        const h = Math.round((areaH - gapY) / rows);
-        placements = placements.slice(0, 4).map((p, i) => {
-          const col = i % cols;
-          const row = Math.floor(i / cols);
-          const slot = {
-            x: col * (w + gapX),
-            y: row * (h + gapY),
-            w,
-            h,
-          };
-          return fitPlacementInSlot(p, slot, 36, 6);
-        });
-      }
-
-      return { ...prevPage, placements };
     });
   }
 
@@ -2761,6 +3063,15 @@ export default function App() {
               {currentSpreadIndex + 1}/{Math.max(spreads.length, 1)}
             </span>
             <IconButton icon="plus" title="Aggiungi pagina" ariaLabel="Aggiungi pagina" onClick={addInnerPage} />
+            <button
+              className={`toolbar-tool-btn ${layoutPanelOpen ? "active-toggle" : ""}`}
+              onClick={() => setLayoutPanelOpen((open) => !open)}
+              title="Pannello layout"
+              aria-label="Pannello layout"
+            >
+              <Icon name="layout" />
+              Layout
+            </button>
             <IconButton
               icon="chevronRight"
               title="Spread successivo"
@@ -2769,53 +3080,6 @@ export default function App() {
                 patchState((p) => ({ ...p, currentSpread: Math.min(spreads.length - 1, p.currentSpread + 1) }))
               }
             />
-            <button
-              className={`icon-btn ${autoLayoutMode === "hero" ? "active-toggle" : ""}`}
-              onClick={() => {
-                autoLayoutModeRef.current = "hero";
-                setAutoLayoutMode("hero");
-                applyLayoutPreset("hero");
-              }}
-              title="Layout 1 (hero) / preset auto"
-              aria-label="Layout 1"
-            >
-              1
-            </button>
-            <button
-              className={`icon-btn ${autoLayoutMode === "two-cols" ? "active-toggle" : ""}`}
-              onClick={() => {
-                autoLayoutModeRef.current = "two-cols";
-                setAutoLayoutMode("two-cols");
-                applyLayoutPreset("two-cols");
-              }}
-              title="Layout 2 colonne / preset auto"
-              aria-label="Layout 2"
-            >
-              2
-            </button>
-            <button
-              className={`icon-btn ${autoLayoutMode === "grid4" ? "active-toggle" : ""}`}
-              onClick={() => {
-                autoLayoutModeRef.current = "grid4";
-                setAutoLayoutMode("grid4");
-                applyLayoutPreset("grid4");
-              }}
-              title="Layout griglia 4 / preset auto"
-              aria-label="Layout 4"
-            >
-              4
-            </button>
-            <button
-              className="icon-btn tool-auto-btn"
-              onClick={autoGeneratePagesFromCatalog}
-              title="Auto impagina con preset 1/2/4 selezionato"
-              aria-label="Auto impagina"
-            >
-              [auto]
-            </button>
-            <span className="toolbar-badge" title="Preset auto-layout attivo">
-              Auto: {autoLayoutMode === "hero" ? "1" : autoLayoutMode === "two-cols" ? "2" : "4"}
-            </span>
             <button
               className={`icon-btn ${state.layoutAssist?.distributeRespectMargins ? "active-toggle" : ""}`}
               onClick={() =>
@@ -3139,6 +3403,20 @@ export default function App() {
         />
       )}
 
+      {layoutPanelOpen && (
+        <LayoutPanel
+          selectedPreset={selectedLayoutPreset}
+          onSelectPreset={setSelectedLayoutPreset}
+          onClose={() => setLayoutPanelOpen(false)}
+          onApplyActivePage={applySelectedLayoutToActivePage}
+          onGenerateCatalog={generateCatalogFromLayoutPreset}
+          hasWorks={!!state.works?.length}
+          hasActivePage={!!activeEditablePage}
+          pageFormatLabel={currentFormat.label}
+          boundMode={state.layoutAssist?.boundMode || "margins"}
+        />
+      )}
+
       {workEditor.open && (
         <WorkEditorModal
           draft={workEditor.draft}
@@ -3268,6 +3546,7 @@ function Icon({ name }) {
     plus: <svg {...common}><path d="M12 5v14M5 12h14" /></svg>,
     minus: <svg {...common}><path d="M5 12h14" /></svg>,
     reset: <svg {...common}><path d="M20 12a8 8 0 1 1-2.3-5.7" /><path d="M20 4.5v5h-5" /></svg>,
+    layout: <svg {...common}><path d="M4 5h16v14H4z" /><path d="M4 10h16M10 5v14" /></svg>,
     grid: <svg {...common}><path d="M4 4h16v16H4zM4 10h16M10 4v16" /></svg>,
     guides: <svg {...common}><path d="M12 3v18M3 12h18" /><circle cx="12" cy="12" r="2" /></svg>,
     bounds: <svg {...common}><path d="M4 4h16v16H4z" /><path d="M8 8h8v8H8z" /></svg>,
@@ -3295,8 +3574,7 @@ function HelpOverlay({ onClose }) {
   const items = [
     ["Frecce", "Sfoglia spread"],
     ["+", "Aggiungi pagina"],
-    ["1/2/4", "Preset layout pagina"],
-    ["[auto]", "Una pagina per opera dal catalogo"],
+    ["Layout", "Pannello preset 1 / 2 / 4 / masonry"],
     ["Distrib.", "Distribuzione su margini on/off"],
     ["Spread", "Vista libro reale / tecnica"],
     ["Zoom", "Zoom vista e reset"],
@@ -3322,6 +3600,86 @@ function HelpOverlay({ onClose }) {
             <small>{v}</small>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function LayoutPreview({ presetId }) {
+  return (
+    <div className={`layout-preview layout-preview-${presetId}`} aria-hidden="true">
+      {presetId === "single" && <span className="tile tile-full" />}
+      {presetId === "double" && (
+        <>
+          <span className="tile tile-half" />
+          <span className="tile tile-half" />
+        </>
+      )}
+      {presetId === "quad" && (
+        <>
+          <span className="tile tile-quarter" />
+          <span className="tile tile-quarter" />
+          <span className="tile tile-quarter" />
+          <span className="tile tile-quarter" />
+        </>
+      )}
+      {presetId === "masonry" && (
+        <>
+          <span className="tile tile-wide" />
+          <span className="tile tile-tall" />
+          <span className="tile tile-small" />
+          <span className="tile tile-mid" />
+          <span className="tile tile-small" />
+        </>
+      )}
+    </div>
+  );
+}
+
+function LayoutPanel({
+  selectedPreset,
+  onSelectPreset,
+  onClose,
+  onApplyActivePage,
+  onGenerateCatalog,
+  hasWorks,
+  hasActivePage,
+  pageFormatLabel,
+  boundMode,
+}) {
+  return (
+    <div className="floating-panel layout-panel">
+      <div className="floating-head">
+        <div>
+          <strong>Gestione layout</strong>
+          <p className="muted">Formato: {pageFormatLabel} · Vincoli: {boundMode === "page" ? "pagina intera" : "margini"}</p>
+        </div>
+        <button onClick={onClose}>✕</button>
+      </div>
+      <div className="layout-presets-grid">
+        {LAYOUT_PRESETS.map((preset) => (
+          <button
+            key={preset.id}
+            className={`layout-card ${selectedPreset === preset.id ? "active" : ""}`}
+            onClick={() => onSelectPreset(preset.id)}
+            type="button"
+          >
+            <div className="layout-card-head">
+              <span className="layout-chip">{preset.label}</span>
+              <strong>{preset.title}</strong>
+            </div>
+            <LayoutPreview presetId={preset.id} />
+            <small>{preset.summary}</small>
+          </button>
+        ))}
+      </div>
+      <div className="layout-panel-actions">
+        <button className="ghost-btn" onClick={onApplyActivePage} disabled={!hasActivePage || !hasWorks}>
+          Applica alla pagina attiva
+        </button>
+        <button className="primary-btn" onClick={onGenerateCatalog} disabled={!hasWorks}>
+          Genera pagine dal catalogo
+        </button>
       </div>
     </div>
   );
@@ -3736,14 +4094,6 @@ function WorkEditorModal({ draft, onCancel, onSave }) {
                 {label}
                 {key === "notes" ? (
                   <textarea rows={3} value={form[key] || ""} onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))} />
-                ) : key === "dpi" ? (
-                  <input
-                    type="number"
-                    min={1}
-                    step={1}
-                    value={form[key] ?? DEFAULT_WORK_DPI}
-                    onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))}
-                  />
                 ) : (
                   <input value={form[key] || ""} onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))} />
                 )}

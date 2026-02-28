@@ -5,7 +5,6 @@ Applicazione web per impaginare un catalogo di opere (quadri, fotografie, dipint
 Consente di:
 - importare immagini e metadati opere
 - impaginare opere e testi su pagine
-- usare layout automatici (`1 / 2 / 4` + `[auto]`)
 - gestire copertina / retrocopertina / pagine speciali
 - generare pagine finali `Elenco opere`
 - esportare/importare JSON
@@ -79,15 +78,6 @@ docker run --rm -p 6063:6063 catalogo-opere
 - Didascalie spostabili liberamente
 - Inline edit dei testi (e didascalie)
 
-### Layout automatici
-
-- Pulsanti `1 / 2 / 4` impostano il preset corrente
-- `[auto]` genera pagine opere con il preset selezionato:
-  - 1 opera per pagina
-  - 2 opere per pagina
-  - 4 opere per pagina
-- Inserisce anche una pagina `Prefazione` editabile (titolo + corpo)
-
 ### Pagine speciali
 
 - Copertina editabile
@@ -112,8 +102,8 @@ Configurabile dal pannello tema (icona in alto):
 - colori testo/accento/UI
 - margini globali catalogo
 - sfondo pagina default (applicato a tutte le pagine)
-- default mostra didascalia (usato da `[auto]`)
-- bordo elementi default `%` (applicato globalmente e usato da `[auto]`)
+- default mostra didascalia
+- bordo elementi default `%` (applicato globalmente)
 
 ## Controlli utili
 
