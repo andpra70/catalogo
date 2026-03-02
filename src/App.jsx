@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import sampleProjectPayload from "./sample/sample.json";
 
 const STORAGE_KEY = "catalogo-opere-state-v1";
 const PROJECTS_INDEX_KEY = "catalogo-opere-projects-index-v1";
@@ -19,6 +20,13 @@ const DEFAULT_INTRO_CURATORIAL_MD =
 const DEFAULT_THEME_FONT = "'Archivo', sans-serif";
 const DEFAULT_PAGE_FORMAT_ID = "a6-portrait";
 const DEFAULT_THEME_MARGINS = { top: 15, right: 15, bottom: 15, left: 15 };
+const SAMPLE_PROJECT_ID = "asset-sample-araki";
+const SAMPLE_PROJECT_ENTRY = {
+  id: SAMPLE_PROJECT_ID,
+  name: "Esempio asset: Araki",
+  updatedAt: "asset",
+  source: "asset",
+};
 
 const FONT_OPTIONS = [
   { label: "Archivo", value: "'Archivo', sans-serif" },
@@ -1875,6 +1883,11 @@ export default function App() {
   const [currentThemeId, setCurrentThemeId] = useState(null);
   const [themeDialog, setThemeDialog] = useState({ open: false, mode: "save", name: "" });
   const [printProgress, setPrintProgress] = useState({ active: false, current: 0, total: 0, message: "" });
+  const availableProjects = useMemo(
+    () => [SAMPLE_PROJECT_ENTRY, ...savedProjects.filter((project) => project.id !== SAMPLE_PROJECT_ID)],
+    [savedProjects],
+  );
+  const currentSavedProject = savedProjects.find((project) => project.id === currentProjectId) || null;
 
   useEffect(() => {
     function onDocPointerDown(e) {
@@ -2864,10 +2877,8 @@ export default function App() {
     URL.revokeObjectURL(url);
   }
 
-  async function importCatalogJson(file) {
-    const text = await file.text();
-    const parsed = JSON.parse(text);
-    const incoming = parsed.catalog || parsed;
+  async function importCatalogPayload(payload) {
+    const incoming = payload?.catalog || payload || {};
     const importedWorks = await Promise.all(
       (incoming.works || []).map(async (work) => {
         const normalized = normalizeWorkData(work);
@@ -2890,6 +2901,12 @@ export default function App() {
       selectedElement: null,
       currentSpread: 0,
     });
+  }
+
+  async function importCatalogJson(file) {
+    const text = await file.text();
+    const parsed = JSON.parse(text);
+    await importCatalogPayload(parsed);
   }
 
   async function onImportJsonInput(e) {
@@ -3031,6 +3048,12 @@ export default function App() {
 
   async function loadProjectFromList(projectId) {
     try {
+      if (projectId === SAMPLE_PROJECT_ID) {
+        await importCatalogPayload(sampleProjectPayload);
+        setCurrentProjectId(projectId);
+        setTopbarMenuOpen(false);
+        return;
+      }
       const raw = localStorage.getItem(projectStorageKey(projectId));
       if (!raw) {
         window.alert("Progetto non trovato.");
@@ -3054,6 +3077,7 @@ export default function App() {
   }
 
   function deleteProjectFromList(projectId) {
+    if (projectId === SAMPLE_PROJECT_ID) return;
     if (!window.confirm("Eliminare il progetto salvato?")) return;
     try {
       localStorage.removeItem(projectStorageKey(projectId));
@@ -3204,7 +3228,7 @@ export default function App() {
                 <button onClick={createNewProject}>Nuovo progetto</button>
                 <button onClick={saveProjectQuick}>Salva progetto</button>
                 <button onClick={() => openSaveProjectDialog("saveAs")}>Salva come...</button>
-                <button onClick={renameCurrentProject} disabled={!currentProjectId}>Rinomina progetto</button>
+                <button onClick={renameCurrentProject} disabled={!currentSavedProject}>Rinomina progetto</button>
                 <button onClick={saveThemeQuick}>Salva tema</button>
                 <button onClick={() => openSaveThemeDialog("saveAs")}>Salva tema come...</button>
                 <button onClick={renameCurrentTheme} disabled={!currentThemeId}>Rinomina tema</button>
@@ -3212,20 +3236,29 @@ export default function App() {
                 <button onClick={printCatalogPdf}>Esporta PDF Book</button>
                 <button onClick={() => importJsonRef.current?.click()}>Importa JSON</button>
                 <div className="saved-projects-list">
-                  <small>Progetti salvati</small>
-                  {!savedProjects.length && <div className="saved-project-row empty">Nessun progetto</div>}
-                  {savedProjects.map((project) => (
+                  <small>Progetti</small>
+                  {!availableProjects.length && <div className="saved-project-row empty">Nessun progetto</div>}
+                  {availableProjects.map((project) => (
                     <div key={project.id} className="saved-project-row">
                       <button
                         className={`saved-project-load ${currentProjectId === project.id ? "active" : ""}`}
                         onClick={() => loadProjectFromList(project.id)}
-                        title={project.updatedAt ? new Date(project.updatedAt).toLocaleString("it-IT") : undefined}
+                        title={
+                          project.source === "asset"
+                            ? "Progetto di esempio incluso negli asset"
+                            : project.updatedAt
+                              ? new Date(project.updatedAt).toLocaleString("it-IT")
+                              : undefined
+                        }
                       >
                         {project.name}
+                        {project.source === "asset" ? " (asset)" : ""}
                       </button>
-                      <button className="saved-project-delete" onClick={() => deleteProjectFromList(project.id)} title="Elimina progetto">
-                        ×
-                      </button>
+                      {project.source !== "asset" && (
+                        <button className="saved-project-delete" onClick={() => deleteProjectFromList(project.id)} title="Elimina progetto">
+                          ×
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
