@@ -4189,6 +4189,29 @@ function NumberField({ label, value, onChange }) {
 
 function Filmstrip({ works, selectedWorkId, onSelect, onEdit, onDelete, onAdd, onImportFiles, vertical = false }) {
   const fileRef = useRef(null);
+  const [hoverPreview, setHoverPreview] = useState(null);
+
+  function openHoverPreview(work, anchorEl) {
+    const rect = anchorEl?.getBoundingClientRect?.();
+    if (!rect) return;
+    setHoverPreview({
+      work,
+      rect: {
+        top: rect.top,
+        left: rect.left,
+        right: rect.right,
+        bottom: rect.bottom,
+      },
+    });
+  }
+
+  function closeHoverPreview(workId = null) {
+    setHoverPreview((prev) => {
+      if (!prev) return prev;
+      if (workId && prev.work?.id !== workId) return prev;
+      return null;
+    });
+  }
 
   async function onFileInput(e) {
     if (e.target.files?.length) {
@@ -4200,6 +4223,10 @@ function Filmstrip({ works, selectedWorkId, onSelect, onEdit, onDelete, onAdd, o
   return (
     <footer className={`filmstrip ${vertical ? "vertical" : ""}`}>
       <div className="filmstrip-head">
+        <div className="filmstrip-meta">
+          <strong>{works.length}</strong>
+          <small>{works.length === 1 ? "immagine" : "immagini"}</small>
+        </div>
         <div className="filmstrip-actions">
           <button className={vertical ? "icon-btn" : ""} onClick={onAdd} title="Nuova opera" aria-label="Nuova opera">
             {vertical ? <Icon name="plus" /> : "+ Nuova opera"}
@@ -4225,6 +4252,10 @@ function Filmstrip({ works, selectedWorkId, onSelect, onEdit, onDelete, onAdd, o
               else onSelect(work.id);
             }}
             onDoubleClick={() => onEdit(work)}
+            onMouseEnter={(e) => openHoverPreview(work, e.currentTarget)}
+            onMouseLeave={() => closeHoverPreview(work.id)}
+            onFocus={(e) => openHoverPreview(work, e.currentTarget)}
+            onBlur={() => closeHoverPreview(work.id)}
             title="Click per selezionare, click su selezionata o doppio click per modificare"
           >
             <span
@@ -4242,6 +4273,25 @@ function Filmstrip({ works, selectedWorkId, onSelect, onEdit, onDelete, onAdd, o
         ))}
         {!works.length && <div className="film-empty">Nessuna opera. Aggiungi dal pulsante o trascina una immagine sul frame.</div>}
       </div>
+      {hoverPreview?.work && (
+        <div
+          className="filmstrip-tooltip"
+          style={{
+            top: `${Math.max(12, hoverPreview.rect.top)}px`,
+            left: `${Math.min(window.innerWidth - 280, hoverPreview.rect.right + 14)}px`,
+          }}
+        >
+          {hoverPreview.work.imageUrl ? (
+            <img src={hoverPreview.work.imageUrl} alt={workLabel(hoverPreview.work)} />
+          ) : (
+            <div className="thumb-placeholder filmstrip-tooltip-ph">No img</div>
+          )}
+          <div className="filmstrip-tooltip-copy">
+            <strong>{workLabel(hoverPreview.work)}</strong>
+            <small>{[hoverPreview.work.author || "Autore n/d", hoverPreview.work.year || "Anno n/d"].join(" · ")}</small>
+          </div>
+        </div>
+      )}
     </footer>
   );
 }
