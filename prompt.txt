@@ -1,0 +1,699 @@
+Rigenera un'applicazione web React + Vite chiamata "Catalogo Opere", pensata come editor visuale per impaginare un catalogo fotografico/editoriale stampabile. L'app deve essere molto vicina all'implementazione descritta qui sotto, sia come funzionalita sia come struttura dei dati, flussi utente, default, strumenti di editing e resa visiva.
+
+Obiettivo generale
+
+L'app consente di:
+- gestire un archivio di opere con immagine e metadati
+- comporre un catalogo pagina per pagina
+- applicare layout automatici alle pagine opere
+- inserire, spostare, ridimensionare e modificare manualmente immagini, didascalie e blocchi testo
+- cambiare formato pagina e tema tipografico/grafico
+- salvare progetto e tema in locale
+- esportare JSON e PDF in vista libro
+
+Stack tecnico
+
+- React 18 con componenti function e hook
+- Vite
+- CSS tradizionale in un solo file `src/styles.css`
+- `html2canvas` + `jspdf` per export PDF
+- `localStorage` per stato, progetti e temi
+- `IndexedDB` per immagini, DB `catalogo-opere-assets`, store `images`
+- nessun router
+- un solo componente principale enorme `src/App.jsx` che contiene quasi tutta la logica e molti sottocomponenti UI
+
+File principali
+
+- `index.html`: carica Google Fonts con una lista ampia di font editoriali
+- `src/main.jsx`: mount dell'app React
+- `src/App.jsx`: costanti, utility, stato, logica editoriale, drag/resize, persistenza, export, componenti UI
+- `src/styles.css`: interfaccia completa, pannelli, toolbar, page canvas, modali, print CSS
+
+Lingua e tono dell'interfaccia
+
+- tutta l'interfaccia e i testi UI sono in italiano
+- tono da strumento professionale ma accessibile
+
+Default di progetto e tema
+
+Usa questi default iniziali:
+
+- font tema di default: `Archivo`
+- formato pagina di default: `A6 Verticale` (`a6-portrait`, 105 x 148 mm)
+- margini tema di default: 15 mm su tutti i lati
+- colore sfondo pagina default: bianco
+- colore testo default: molto scuro
+- colore numero pagina default: marrone-grigio desaturato
+- sfondo di default dei blocchi testo: bianco semitrasparente
+- bordo default elementi: bianco, percentuale 3
+- `snapToGrid: true`
+- `showGuides: true`
+- `gridSize: 2`
+- `snapThreshold: 8`
+- `boundMode: "margins"`
+- `distributeRespectMargins: true`
+- `bookViewMode: "real"`
+
+Font disponibili
+
+La select font del tema deve includere almeno questi font:
+
+- Archivo
+- Cormorant Garamond
+- IBM Plex Serif
+- Space Grotesk
+- Playfair Display
+- Libre Baskerville
+- Lora
+- Merriweather
+- Bodoni Moda
+- DM Serif Display
+- Spectral
+- Source Serif 4
+- Crimson Pro
+- Manrope
+- Plus Jakarta Sans
+- Work Sans
+- Sora
+- Outfit
+- Inter Tight
+- Fraunces
+- EB Garamond
+- Alegreya
+- Alegreya Sans
+- Assistant
+- Barlow Condensed
+- Cardo
+- Cormorant Infant
+- Cormorant SC
+- Domine
+- Forum
+- Josefin Sans
+- Libre Franklin
+- Literata
+- Marcellus
+- Noto Sans
+- Noto Serif
+- Old Standard TT
+- Prata
+- Public Sans
+- Tenor Sans
+- Urbanist
+
+Modello dati principale
+
+Lo stato principale contiene:
+
+- `projectTitle`
+- `works`: array opere
+- `selectedWorkId`
+- `pages`: array pagine principali del catalogo. Inizia con copertina, almeno una pagina interna, retrocopertina
+- `currentSpread`
+- `activePageId`
+- `selectedElement`
+- `theme`
+- `pageFormat`
+- `summaryPageEdits`
+- `specialPages`: oggetto con `insideFront` e `insideBack`
+- `layoutAssist`
+- `bookViewMode`
+
+Modello opera
+
+Ogni opera contiene:
+
+- `id`
+- `title`
+- `author`
+- `year`
+- `type`
+- `technique`
+- `dimensions`
+- `inventory`
+- `location`
+- `notes`
+- `imageUrl`
+- `imageId`
+- eventuale `_imageFile` temporaneo
+
+Modello pagina
+
+Ogni pagina contiene almeno:
+
+- `id`
+- `type`
+- `title`
+- `bgColor`
+- `pageNumber`
+- `showPageNumber`
+- `pageNumberColor`
+- `margins`
+- `textBlocks`
+- `placements`
+
+Tipi pagina usati
+
+- `cover-front`
+- `cover-back`
+- `page`
+- `inside-front-cover`
+- `inside-back-cover`
+- `summary-page`
+- `spacer`
+
+Modello blocco testo
+
+- `id`
+- `kind: "text"`
+- `x`, `y`, `w`, `h` in millimetri logici relativi all'area pagina
+- `text` in Markdown
+- `fontSize`
+- `fontWeight`
+- `color`
+- `bgColor`
+- `align`
+- `borderWidthPct`
+- `borderColor`
+
+Modello placement immagine
+
+- `id`
+- `workId`
+- `x`, `y`, `w`, `h`
+- `zIndex`
+- `borderWidthPct`
+- `borderColor`
+- `imageScale`
+- `imageOffsetX`
+- `imageOffsetY`
+- `showCaption`
+- `captionOverride`
+- `captionX`, `captionY`, `captionW`, `captionH`
+- `captionBorderWidthPct`
+- `captionBorderColor`
+
+Formati pagina
+
+Fornisci una lista di formati in mm con almeno:
+
+- A4 verticale
+- quadrato 240
+- orizzontale 297x210
+- A5 verticale e orizzontale
+- A6 verticale e orizzontale
+- A3 verticale e orizzontale
+- US Letter verticale e orizzontale
+- US Legal verticale
+- B5 verticale e orizzontale
+- quadrato 210
+
+Pagine iniziali generate
+
+Il progetto iniziale deve creare:
+
+- copertina frontale con titolo e sottotitolo centrati in blocchi testo a piena larghezza
+- una pagina interna iniziale di prefazione/curatela con testo Markdown
+- retrocopertina con sintesi, biografia e codice edizione in blocchi testo
+- seconda di copertina (`insideFront`) con credits
+- terza di copertina (`insideBack`) vuota
+
+Prefazione curatoriale
+
+- deve esistere una vera pagina di prefazione/curatela come prima pagina interna del catalogo
+- deve comparire prima di qualsiasi pagina opere
+- deve usare i template Markdown del tema per titolo e corpo
+- deve essere persistita come pagina reale del catalogo
+- quando il catalogo viene rigenerato dal tool layout, questa pagina deve essere preservata oppure ricreata automaticamente nella stessa posizione
+
+Composizione interfaccia
+
+L'app deve avere tre colonne / aree principali:
+
+1. Filmstrip verticale a sinistra
+- elenco opere importate
+- preview immagine
+- selezione opera
+- click sull'opera selezionata o doppio click apre editor opera
+- pulsanti per nuova opera e import immagini
+- drag dell'opera verso la pagina
+
+2. Area centrale con vista libro
+- spread a due pagine o vista tecnica
+- righelli in cm sopra e a sinistra di ogni pagina
+- zoom e pan della vista
+- drag and drop opere
+- editing diretto di immagini, didascalie e testi
+- overlay drag-and-drop quando l'utente trascina file immagine nell'app
+
+3. Sidebar destra
+- sezione "Pagina attiva"
+- sezione "Elemento selezionato"
+- sezione "Opera selezionata"
+
+Topbar e toolbar
+
+Topbar con:
+- titolo app `Catalogo Opere`
+- input per titolo progetto
+- pulsanti help, tema, menu
+
+Menu overflow con:
+- nuovo progetto
+- salva progetto
+- salva progetto come
+- rinomina progetto
+- salva tema
+- salva tema come
+- rinomina tema
+- esporta JSON
+- esporta PDF Book
+- importa JSON
+- lista progetti salvati
+- lista temi salvati
+
+Toolbar libro con:
+- spread precedente / successivo
+- badge spread corrente
+- pulsante `+` per aggiungere pagina vuota subito dopo la pagina corrente attiva
+- toggle pannello layout
+- toggle distribuzione rispetto a margini o estremi elementi
+- toggle vista reale / tecnica
+- zoom out / zoom in / reset
+- select formato pagina
+- toggle snap a griglia
+- toggle guide magnetiche
+- toggle boundMode tra `margins` e `page`
+- input numerico dimensione griglia
+- aggiungi testo
+- aggiungi opera selezionata
+- riporta elementi dentro i vincoli
+- elimina elemento selezionato
+
+Tema catalogo
+
+Pannello floating con:
+- select font
+- font base
+- dimensione titoli
+- peso font
+- colore testo
+- colore accento
+- tinta UI
+- sfondo pagina default
+- sfondo default blocchi testo con alpha
+- colore numero pagina default
+- checkbox default mostra didascalia automatica
+- percentuale bordo default elementi
+- colore bordo default elementi
+- textarea per template Markdown:
+  - introduzione/curatoriale
+  - prefazione titolo
+  - prefazione corpo
+  - sintesi retro
+  - biografia retro
+- slider per margini top/right/bottom/left
+
+Editor pagina attiva
+
+La sidebar "Pagina attiva" deve permettere:
+- cambiare sfondo pagina
+- mostrare/nascondere numero pagina
+- cambiare colore numero pagina
+- eliminare sempre la pagina attiva, comprese pagine standard, pagine speciali e `summary-page` generata
+- vedere la lista delle opere presenti in quella pagina
+
+L'eliminazione pagina deve essere reale:
+- se la pagina sta in `pages`, rimuoverla dall'array
+- se e una special page, rimuoverla realmente dal relativo slot in `specialPages`
+- se la pagina e una `summary-page`, deve essere possibile rimuoverla in modo persistito e reale rispetto al modello dati del sommario
+- non usare una strategia "hidden"
+
+Editor elemento selezionato
+
+Per blocco testo:
+- modifica testo Markdown
+- font size
+- peso
+- colore
+- sfondo con alpha
+- allineamento
+- bordo %
+- colore bordo
+
+Per placement opera:
+- override didascalia in Markdown
+- bordo immagine %
+- colore bordo immagine
+- checkbox mostra didascalia
+- bordo didascalia %
+- colore bordo didascalia
+
+Editor opera
+
+Modale con:
+- drag/drop immagine
+- upload file
+- preview immagine
+- form per tutti i campi opera
+- pulsanti annulla/salva
+
+Comportamenti pagina e spread
+
+- le pagine sono rese in spread da due
+- modalita `real`: copertina singola davanti e retro singolo alla fine
+- modalita `technical`: accoppiamento secco due per due
+- se serve una pagina di riempimento interna in vista reale, genera uno `spacer`
+
+Gestione numerazione pagine
+
+- copertina e retro non mostrano numero
+- inside cover e spacer non contano nella numerazione
+- le pagine contenuto e sommario contano nella numerazione automatica
+
+Sommario / elenco opere
+
+Il sommario deve essere generato automaticamente come `summary-page`:
+- una sola pagina
+- posizionata in penultima posizione, subito prima del retrocopertina
+- costituita da un solo blocco testo Markdown
+- il testo parte in alto, occupa tutta l'area utile della pagina
+- contiene titolo `# Elenco opere` e tutte le opere con pagina relativa
+- la dimensione font deve ridursi automaticamente fino a far stare tutto il contenuto su quella sola pagina
+- deve essere possibile cancellare anche questa `summary-page` generata dall'interfaccia
+
+Esempio riga sommario:
+- `1. **Titolo** — *Autore* — anno: 2024 — **pag. 7**`
+
+Gestione layout automatici
+
+Prevedi almeno questi preset:
+- `single`
+- `double`
+- `quad`
+- `masonry`
+
+Ogni preset genera placements automaticamente rispettando:
+- formato pagina corrente
+- margini tema
+- aspect ratio immagini
+- bound mode
+- theme defaults di bordi/caption
+
+Comportamenti richiesti del tool layout
+
+- "Applica layout a pagina attiva" deve ricostruire solo i placement della pagina attiva
+- "Genera catalogo" deve rigenerare le pagine opere del catalogo
+- deve mantenere o ricreare la pagina di prefazione/curatela come prima pagina interna
+- non deve distruggere elementi esistenti in copertina o retrocopertina: deve solo normalizzarli
+- non deve inserire una pagina bianca/editoriale prima della lista delle opere
+- la sequenza generata deve essere:
+  - copertina
+  - seconda di copertina se presente
+  - prefazione/curatela come prima pagina interna
+  - pagine opere
+  - inside back
+  - sommario
+  - retrocopertina
+
+Inserimento pagina vuota
+
+Il pulsante `+` della toolbar deve:
+- creare una nuova pagina vuota `type: "page"`
+- inserirla subito dopo la pagina attiva corrente se questa e in `pages`
+- altrimenti inserirla prima del retrocopertina come fallback
+
+Inserimento e modifica elementi
+
+Blocchi testo:
+- si aggiungono alla pagina attiva
+- si posizionano inizialmente centrati orizzontalmente vicino al top dell'area utile
+- usano sfondo testo del tema
+- supportano Markdown in visualizzazione
+- editing inline con `textarea`
+- resize manuale da handle visibile
+
+Opere:
+- possono essere aggiunte dalla filmstrip alla pagina attiva
+- possono essere trascinate su una pagina o trasferite da una pagina all'altra
+- hanno immagine e didascalia opzionale
+- la didascalia e un box indipendente trascinabile e ridimensionabile
+- doppio click sull'immagine massimizza l'opera nei limiti disponibili
+- Alt durante drag principale: pan interno immagine
+- Shift/Alt sul drag principale: zoom o modalita alternative come da implementazione
+
+Drag, resize, snap
+
+Sistema di editing diretto con:
+- drag elementi
+- resize blocchi testo, immagini e didascalie
+- snap opzionale a griglia
+- guide magnetiche opzionali
+- snap a margini/centri/pagina e, se attivo, ad altri elementi
+- se `snapToGrid` e disattivato il movimento deve essere libero, senza snap implicito
+- `Alt` durante drag disabilita temporaneamente lo snap
+- `boundMode: "margins"` vincola all'area interna
+- `boundMode: "page"` consente anche sconfinamento nei margini ma sempre entro il foglio
+
+Cambio formato pagina
+
+Quando cambia il formato pagina:
+- tutte le pagine devono essere trattate nello stesso modo
+- nessuna categoria di pagina deve avere un comportamento speciale
+- testi e placements devono essere scalati e riposizionati sul nuovo formato
+- i testi devono essere riportati dentro i vincoli finali del nuovo formato
+- niente automatismi che espandano i blocchi testo al massimo della pagina
+- le immagini e didascalie devono essere normalizzate nei vincoli finali
+
+Cambio margini
+
+Quando cambiano i margini tema:
+- aggiornare margini di tutte le pagine
+- normalizzare tutte le pagine rispetto ai nuovi vincoli
+- applicare la stessa logica anche alle pagine speciali e al sommario
+
+Normalizzazione manuale
+
+Il comando "Riporta elementi dentro vincoli" deve:
+- funzionare sulla pagina attiva
+- usare la stessa logica comune di normalizzazione
+- applicarsi sia a placements sia a blocchi testo
+
+Persistenza locale
+
+Persistenza automatica in `localStorage` con chiave:
+- `catalogo-opere-state-v1`
+
+Progetti salvati:
+- indice in `catalogo-opere-projects-index-v1`
+- payload per progetto con prefisso `catalogo-opere-project:`
+
+Temi salvati:
+- indice in `catalogo-opere-themes-index-v1`
+- payload tema con prefisso `catalogo-opere-theme:`
+
+Immagini:
+- non salvare i data URL dentro il JSON principale
+- salvare le immagini in IndexedDB
+- in `works` tenere `imageId`
+- ricaricare le immagini asincronamente all'avvio
+
+Import/export JSON
+
+- export JSON dell'intero catalogo sanitizzato
+- import JSON che ricostruisce tema, pagine, opere, specialPages e metadati
+- mantenere compatibilita con immagini separate
+
+Export PDF
+
+Genera PDF in vista book:
+- usa `html2canvas` e `jspdf`
+- formatta il PDF usando il formato pagina corrente in mm
+- crea una sezione `print-catalog` nascosta in pagina
+- ogni pagina stampata e un `PageCanvas` scalato
+- mostra una progress bar di esportazione
+
+Rendering pagina
+
+Ogni pagina usa:
+- `PageCanvasFrame` con righelli
+- `PageCanvas` con `aspect-ratio` del formato
+- `page-inner` che applica i margini come inset percentuali sul foglio
+- elementi posizionati in coordinate mm convertite in percentuali
+
+Styling generale
+
+Look richiesto:
+- sfondo app chiaro con gradienti/radiali, non piatto
+- carte/pannelli con bianco traslucido, blur e bordi morbidi
+- tipografia controllata da CSS variables del tema
+- page canvas con ombra da carta
+- stati selected con outline evidente
+- handle di resize grandi, contrastati, leggibili
+- pulsanti piccoli ma densi, stile tool professionale
+- layout responsive ragionevole desktop-first
+
+Dettagli importanti da preservare
+
+- il titolo progetto e modificabile direttamente in topbar
+- il click su pagina la rende attiva
+- il click su elemento lo seleziona
+- doppio click su testo apre editing inline
+- doppio click su opera massimizza nell'area consentita
+- la filmstrip consente drag-and-drop opere sulla pagina
+- il pulsante elimina pagina nella sidebar "Pagina attiva" deve essere sempre presente e funzionare
+- deve poter eliminare anche la `summary-page` generata
+- il catalogo deve avere una prefazione/curatela come prima pagina interna
+- il sommario e pagina unica, penultima, con tutto il testo
+- il layout automatico non deve distruggere copertina/retrocopertina
+- il formato default deve essere A6 verticale
+- i margini default devono essere 15 mm
+- il font default deve essere Archivo
+
+Funzioni/utility da prevedere
+
+Riproduci funzioni o equivalenti per:
+- parsing colore hex/rgb/rgba con alpha
+- conversione mm -> px e mm -> percentuale
+- rendering Markdown safe con supporto a titoli, liste, quote, link, inline code, strong/em
+- stima altezza blocchi testo in base a larghezza e font
+- generazione blocchi testo full width
+- normalizzazione placements e textBlocks nei bounds
+- generazione layout single/double/quad/masonry
+- fit immagine in box preservando aspect ratio
+- creazione placements con didascalia auto
+- gestione spread real/technical
+- gestione metrics render pagina per export e scala UI
+
+Vincoli architetturali
+
+- va bene un'unica grande `App.jsx` monolitica con sottocomponenti interni, come nell'implementazione attuale
+- i dati geometrici devono restare in mm logici, non in pixel
+- il rendering a schermo converte poi in percentuali o px derivati
+
+Checklist implementativa
+
+Usa questa checklist per rigenerare il programma in modo sistematico.
+
+1. Bootstrap progetto
+- creare progetto Vite + React
+- creare `src/main.jsx`, `src/App.jsx`, `src/styles.css`, `index.html`
+- caricare Google Fonts con tutti i font editoriali richiesti
+
+2. Costanti e default
+- definire chiavi storage, chiavi temi/progetti, DB immagini
+- definire template Markdown default
+- definire font options
+- definire page formats
+- definire layout presets
+- definire default tema: `Archivo`, `A6 Verticale`, margini 15 mm
+
+3. Modelli dati e factory
+- creare helper per `createPage`, `createTextBlock`, `createPlacementForWork`, `cloneWorkDraft`
+- creare `createDefaultState`
+- creare pagine iniziali: copertina, prefazione, retrocopertina, insideFront, insideBack
+
+4. Utility core
+- conversioni mm/px/percent
+- clamp, uid, slugify
+- parser e serializer colori con alpha
+- render Markdown safe
+- stima altezza blocco testo
+- bounds pagina e rendered bounds
+
+5. Persistenza
+- autosave stato in `localStorage`
+- salvataggio e caricamento progetti
+- salvataggio e caricamento temi
+- IndexedDB per immagini
+- import/export JSON
+
+6. Gestione opere
+- CRUD opere
+- modale editor opera
+- import immagini multiple
+- rimozione immagini da IndexedDB quando necessario
+- filmstrip verticale con drag and drop
+
+7. Costruzione catalogo
+- generare spreads reali e tecnici
+- mantenere copertina e retrocopertina
+- mantenere o ricreare prefazione come prima pagina interna
+- generare pagine opere dai preset layout
+- generare sommario come `summary-page` unica penultima
+
+8. Layout automatici
+- implementare preset `single`, `double`, `quad`, `masonry`
+- rispettare aspect ratio immagini
+- costruire placement e caption automatiche
+- applicare theme defaults
+
+9. Editing diretto pagina
+- selezione pagina ed elemento
+- drag testo, immagine, didascalia
+- resize testo, immagine, didascalia
+- editing inline testo e didascalia
+- trasferimento placement tra pagine
+
+10. Snap e vincoli
+- snap a griglia opzionale
+- guide opzionali
+- snap a elementi e margini solo quando attivo
+- `Alt` per disabilitare temporaneamente
+- `boundMode` `margins` / `page`
+
+11. Cambio formato e margini
+- scalare e riposizionare testi e placement
+- normalizzare tutti gli elementi nei vincoli finali
+- usare la stessa logica per tutte le pagine
+- applicare la logica anche a pagine speciali e sommario
+
+12. UI di controllo
+- topbar con titolo, menu, help, tema
+- toolbar libro con pagina, zoom, snap, format, layout, aggiunta testo/opera
+- sidebar con pagina attiva, elemento selezionato, opera selezionata
+- pulsante elimina pagina sempre presente nella sezione pagina attiva
+
+13. Cancellazione pagine
+- rimuovere realmente le pagine da `pages`
+- rimuovere realmente le pagine speciali da `specialPages`
+- prevedere un meccanismo persistito per cancellare anche `summary-page`
+
+14. Export PDF
+- render offscreen del catalogo
+- conversione in PDF con dimensioni mm del formato corrente
+- progress bar durante l'export
+
+15. CSS e resa visiva
+- pannelli floating e topbar traslucidi
+- carta con ombre e righelli
+- handle resize molto visibili
+- layout desktop-first responsivo
+- print CSS pulito per export
+
+Discrepanze note
+
+Questa sezione deve essere mantenuta per distinguere tra specifica target e comportamento corrente del codice esistente.
+
+1. Prefazione curatoriale
+- specifica target: il catalogo deve avere una pagina di prefazione/curatela come prima pagina interna prima delle pagine opere
+- stato attuale del codice: alcuni flussi recenti di generazione catalogo possono partire direttamente dalle pagine opere senza reinserire la prefazione
+- implicazione per la rigenerazione: la prefazione va trattata come parte strutturale del catalogo
+
+2. Eliminazione summary-page
+- specifica target: anche la `summary-page` generata deve essere eliminabile dall'interfaccia
+- stato attuale del codice: la rimozione reale e oggi naturale per `pages` e `specialPages`, mentre il sommario e ancora una pagina derivata rigenerata dal catalogo
+- implicazione per la rigenerazione: serve un modello dati o una strategia persistita che consenta di cancellare davvero il sommario generato
+
+3. Pulsante elimina pagina
+- specifica target: il pulsante nella sezione "Pagina attiva" deve essere sempre presente e funzionare su qualsiasi pagina mostrata come attiva
+- stato attuale del codice: il bottone e sempre visibile, ma la semantica dati non e ancora perfettamente uniforme per tutte le categorie di pagina
+- implicazione per la rigenerazione: uniformare il concetto di pagina eliminabile
+
+4. Prompt vs codice
+- questo file `prompt.txt` descrive il target desiderato per rigenerare il programma
+- quando il codice corrente differisce, la differenza va annotata qui invece di essere nascosta
+- durante una futura rigenerazione, prevale la specifica di questo file rispetto alle accidentalita della codebase attuale
+
+Deliverable desiderato
+
+Rigenera l'app completa con codice eseguibile, non una demo minimale. Mantieni la logica editoriale e operativa il piu possibile aderente alla specifica sopra, anche se internamente scegli piccole semplificazioni. L'app finale deve comportarsi come un editor professionale di cataloghi fotografici con forte controllo manuale, layout automatico e persistenza locale.

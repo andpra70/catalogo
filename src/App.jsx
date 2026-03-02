@@ -433,6 +433,7 @@ function createInsideBackCoverPage(marginsOverride) {
 
 function createPrefacePage(marginsOverride, bgColor = "#ffffff", borderPct = 3, pageFormatId = DEFAULT_PAGE_FORMAT_ID, themeCfg = null) {
   const page = createPage("page", "Prefazione", marginsOverride);
+  page.systemPageKey = "preface";
   page.bgColor = bgColor;
   const titleMd = themeCfg?.defaultPrefaceTitleMd || DEFAULT_PREFACE_TITLE_MD;
   const bodyMd = themeCfg?.defaultPrefaceBodyMd || DEFAULT_PREFACE_BODY_MD;
@@ -639,7 +640,6 @@ function createDefaultState(themeSeed = null) {
     theme,
     pageFormat: DEFAULT_PAGE_FORMAT_ID,
     summaryPageEdits: {},
-    hiddenPageIds: [],
     specialPages: {
       insideFront: createInsideFrontCoverPage(projectMargins, DEFAULT_PAGE_FORMAT_ID, theme),
       insideBack: createInsideBackCoverPage(projectMargins),
@@ -802,7 +802,6 @@ function loadState() {
       ...parsed,
       theme,
       summaryPageEdits: parsed.summaryPageEdits || {},
-      hiddenPageIds: Array.isArray(parsed.hiddenPageIds) ? parsed.hiddenPageIds : [],
       specialPages: {
         insideFront: {
           ...baseSpecial.insideFront,
@@ -817,6 +816,7 @@ function loadState() {
       },
       pages: (parsed.pages || base.pages).map((p) => ({
         ...p,
+        systemPageKey: p?.systemPageKey || (p?.type === "page" && p?.title === "Prefazione" ? "preface" : undefined),
         margins: { ...theme.pageMargins, ...(p?.margins || {}) },
       })),
       works: (parsed.works || []).map((w) => ({ ...normalizeWorkData(w), imageUrl: "" })),
@@ -899,6 +899,7 @@ function summaryPagesFromWorks(
     placements: [],
   };
   const edit = summaryPageEdits?.[generated.id];
+  if (edit?.deleted) return [];
   if (!edit) return [generated];
   const editedBlock = Array.isArray(edit.textBlocks) ? edit.textBlocks[0] : null;
   return [
@@ -1970,11 +1971,8 @@ export default function App() {
     }));
   }, [state.pages]);
 
-  const hiddenPageIds = new Set(state.hiddenPageIds || []);
-  const editablePages = (state.pages || []).filter((page) => page && !hiddenPageIds.has(page.id));
-  const editableSpecialPages = [state.specialPages?.insideFront, state.specialPages?.insideBack].filter(
-    (page) => page && !hiddenPageIds.has(page.id),
-  );
+  const editablePages = state.pages;
+  const editableSpecialPages = [state.specialPages?.insideFront, state.specialPages?.insideBack].filter(Boolean);
   const currentFormat = getPageFormat(state.pageFormat);
   const frontCover = editablePages[0];
   const backCover = editablePages[editablePages.length - 1];
@@ -1982,14 +1980,8 @@ export default function App() {
     ...page,
     title: page.title || "Pagina",
   }));
-  const insideFrontBlank =
-    state.specialPages?.insideFront && !hiddenPageIds.has(state.specialPages.insideFront.id)
-      ? state.specialPages.insideFront
-      : null;
-  const insideBackBlank =
-    state.specialPages?.insideBack && !hiddenPageIds.has(state.specialPages.insideBack.id)
-      ? state.specialPages.insideBack
-      : null;
+  const insideFrontBlank = state.specialPages?.insideFront || createInsideFrontCoverPage(state.theme.pageMargins);
+  const insideBackBlank = state.specialPages?.insideBack || createInsideBackCoverPage(state.theme.pageMargins);
   const workPageMap = buildWorkFirstPageMapForCatalog(frontCover, insideFrontBlank, innerPages);
   const summaryPages = summaryPagesFromWorks(
     state.works,
@@ -2000,7 +1992,7 @@ export default function App() {
     state.theme.defaultElementBorderPct,
     state.theme.defaultPageNumberColor,
     state.pageFormat,
-  ).filter((page) => !hiddenPageIds.has(page.id));
+  );
   const allEditablePages = [...editablePages, ...editableSpecialPages, ...summaryPages];
   const renderPagesBase = [frontCover, insideFrontBlank, ...innerPages, insideBackBlank, ...summaryPages, backCover];
   let autoPageCounter = 0;
@@ -2341,33 +2333,72 @@ export default function App() {
 
   function removePage(pageId) {
     patchState((prev) => {
-      const hiddenIds = new Set(prev.hiddenPageIds || []);
       const pageIndex = (prev.pages || []).findIndex((p) => p.id === pageId);
-      let pages = prev.pages || [];
-      let nextHiddenPageIds = [...hiddenIds];
-
+      const pages = prev.pages || [];
       if (pageIndex >= 0) {
         if (pages.length <= 1) return prev;
-        pages = pages.filter((p) => p.id !== pageId);
-      } else if (!hiddenIds.has(pageId)) {
-        nextHiddenPageIds = [...hiddenIds, pageId];
-      } else {
-        return prev;
+        const nextPages = pages.filter((p) => p.id !== pageId);
+        const nextActivePageId =
+          nextPages[Math.min(Math.max(pageIndex, 0), Math.max(nextPages.length - 1, 0))]?.id ||
+          nextPages[0]?.id ||
+          prev.specialPages?.insideFront?.id ||
+          prev.specialPages?.insideBack?.id ||
+          null;
+        return {
+          ...prev,
+          pages: nextPages,
+          activePageId: nextActivePageId,
+          selectedElement: null,
+        };
       }
+      if (String(pageId).startsWith("summary_")) {
+        const remainingPages = prev.pages || [];
+        return {
+          ...prev,
+          summaryPageEdits: {
+            ...(prev.summaryPageEdits || {}),
+            [pageId]: {
+              ...(prev.summaryPageEdits?.[pageId] || {}),
+              deleted: true,
+            },
+          },
+          activePageId: remainingPages[remainingPages.length - 1]?.id || prev.specialPages?.insideBack?.id || prev.specialPages?.insideFront?.id || null,
+          selectedElement: null,
+        };
+      }
+      if (prev.specialPages?.insideFront?.id === pageId) {
+        return {
+          ...prev,
+          specialPages: { ...prev.specialPages, insideFront: null },
+          activePageId: pages[0]?.id || prev.specialPages?.insideBack?.id || null,
+          selectedElement: null,
+        };
+      }
+      if (prev.specialPages?.insideBack?.id === pageId) {
+        return {
+          ...prev,
+          specialPages: { ...prev.specialPages, insideBack: null },
+          activePageId: pages[pages.length - 1]?.id || prev.specialPages?.insideFront?.id || null,
+          selectedElement: null,
+        };
+      }
+      return prev;
+    });
+  }
 
-      const nextVisibleMainPages = pages.filter((p) => !nextHiddenPageIds.includes(p.id));
-      const nextActivePageId =
-        nextVisibleMainPages[Math.min(Math.max(pageIndex, 0), Math.max(nextVisibleMainPages.length - 1, 0))]?.id ||
-        nextVisibleMainPages[0]?.id ||
-        (prev.specialPages?.insideFront && !nextHiddenPageIds.includes(prev.specialPages.insideFront.id) ? prev.specialPages.insideFront.id : null) ||
-        (prev.specialPages?.insideBack && !nextHiddenPageIds.includes(prev.specialPages.insideBack.id) ? prev.specialPages.insideBack.id : null) ||
-        null;
+  function restoreSummaryPage() {
+    patchState((prev) => {
+      const current = prev.summaryPageEdits?.summary_0;
+      if (!current?.deleted) return prev;
       return {
         ...prev,
-        pages,
-        hiddenPageIds: nextHiddenPageIds,
-        activePageId: nextActivePageId,
-        selectedElement: null,
+        summaryPageEdits: {
+          ...(prev.summaryPageEdits || {}),
+          summary_0: {
+            ...current,
+            deleted: false,
+          },
+        },
       };
     });
   }
@@ -2532,6 +2563,26 @@ export default function App() {
       const backBase = prev.pages[prev.pages.length - 1] || createDefaultState().pages.at(-1);
       const front = normalizeExistingPage(frontBase);
       const back = normalizeExistingPage(backBase);
+      const existingPreface = (prev.pages || []).find(
+        (page) => page?.systemPageKey === "preface" || (page?.title === "Prefazione" && page.type === "page"),
+      );
+      let prefacePage = createPrefacePage(
+        prev.theme?.pageMargins,
+        defaultBg,
+        prev.theme?.defaultElementBorderPct ?? 3,
+        prev.pageFormat,
+        prev.theme,
+      );
+      if (existingPreface) {
+        prefacePage = {
+          ...prefacePage,
+          ...existingPreface,
+          id: existingPreface.id,
+          margins: { ...(prev.theme?.pageMargins || prefacePage.margins) },
+          placements: [],
+          textBlocks: existingPreface.textBlocks || prefacePage.textBlocks,
+        };
+      }
       const autoPages = buildCatalogLayoutPages(
         prev.works,
         selectedLayoutPreset,
@@ -2542,8 +2593,10 @@ export default function App() {
         null,
         prev.layoutAssist?.boundMode || "margins",
       );
-      const pages = [front, ...autoPages, back];
-      const firstAutoPage = autoPages[0] || back || front;
+      const normalizedPreface = existingPreface
+        ? normalizeExistingPage(prefacePage)
+        : normalizePageForCurrentConstraints(prefacePage, prev.pageFormat, boundMode);
+      const pages = [front, normalizedPreface, ...autoPages, back];
       return {
         ...prev,
         pages,
@@ -2551,9 +2604,11 @@ export default function App() {
           insideFront: normalizeExistingPage(prev.specialPages?.insideFront),
           insideBack: normalizeExistingPage(prev.specialPages?.insideBack),
         },
-        activePageId: firstAutoPage?.id || front?.id || null,
+        activePageId: normalizedPreface?.id || autoPages[0]?.id || front?.id || null,
         currentSpread: 0,
-        selectedElement: null,
+        selectedElement: normalizedPreface?.textBlocks?.[0]
+          ? { pageId: normalizedPreface.id, kind: "text", elementId: normalizedPreface.textBlocks[0].id }
+          : null,
       };
     });
   }
@@ -3415,8 +3470,13 @@ export default function App() {
                 <PageInspector
                   page={activeEditablePage}
                   onChange={(patch) => patchPage(activeEditablePage.id, (p) => ({ ...p, ...patch }))}
-                  onDeletePage={() => removeInnerPage(activeEditablePage.id)}
+                  onDeletePage={() => removePage(activeEditablePage.id)}
                 />
+                {!!state.summaryPageEdits?.summary_0?.deleted && (
+                  <button className="small-btn" onClick={restoreSummaryPage}>
+                    Ripristina sommario
+                  </button>
+                )}
                 <div className="stack-fields">
                   <label>Opere nella pagina</label>
                   {activePageWorks.length ? (
@@ -4003,11 +4063,9 @@ function PageInspector({ page, onChange, onDeletePage }) {
         Colore numero pagina
         <input type="color" value={page.pageNumberColor || "#666666"} onChange={(e) => onChange({ pageNumberColor: e.target.value })} />
       </label>
-      {page.type === "page" && (
-        <button className="danger-btn" onClick={onDeletePage}>
-          Elimina pagina
-        </button>
-      )}
+      <button className="danger-btn" onClick={onDeletePage}>
+        Elimina pagina
+      </button>
     </div>
   );
 }
