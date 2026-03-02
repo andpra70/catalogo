@@ -14,7 +14,7 @@ body,
 }
 
 body {
-  font-family: var(--theme-font, "Cormorant Garamond", serif);
+  font-family: var(--theme-font, "Archivo", sans-serif);
   background:
     radial-gradient(circle at 10% 10%, rgba(255, 255, 255, 0.9), transparent 40%),
     radial-gradient(circle at 90% 16%, rgba(233, 233, 233, 0.85), transparent 40%),
@@ -36,7 +36,7 @@ textarea {
   gap: 10px;
   padding: 10px;
   position: relative;
-  font-family: var(--theme-font, "Cormorant Garamond", serif);
+  font-family: var(--theme-font, "Archivo", sans-serif);
   color: var(--theme-color, #222);
 }
 
@@ -762,7 +762,7 @@ button:disabled {
 .markdown-content h6 {
   margin: 0 0 0.35em;
   line-height: 1.12;
-  font-family: var(--theme-font, "Cormorant Garamond", serif);
+  font-family: var(--theme-font, "Archivo", sans-serif);
   color: inherit;
 }
 

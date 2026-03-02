@@ -16,8 +16,12 @@ const DEFAULT_BACK_BIO_MD =
   "# Biografia Autore\n## Profilo\n**Andrea Rossi** (1987) vive e lavora a Milano.\nE un artista visivo che unisce *fotografia*, **pittura** e pratiche editoriali.\n\n### Ricerca\n- memoria e archivio\n- paesaggio contemporaneo\n- rapporto tra immagine e narrazione\n\n> Nota curatoriale: il suo lavoro alterna rigore documentario e visione poetica.\n\n## Percorso\n1. Formazione in arti visive e fotografia\n2. Prime mostre collettive in spazi indipendenti\n3. Sviluppo di progetti ibridi tra stampa e installazione";
 const DEFAULT_INTRO_CURATORIAL_MD =
   "# Introduzione\nQuesto catalogo nasce come strumento di lettura e di lavoro: non solo una raccolta di immagini, ma un percorso tra opere, materiali e relazioni.\n\n## Intento editoriale\nLa sequenza delle pagine costruisce una progressione che alterna visione ravvicinata e visione d'insieme, con l'obiettivo di valorizzare ritmo, pause e contrasti.\n\n### Obiettivi\n- restituire il contesto di produzione delle opere\n- evidenziare continuita e differenze tra i cicli\n- offrire una consultazione chiara per studio, archivio e presentazione\n\n## Testo curatoriale\nLa selezione propone un attraversamento tematico tra **materia**, *luce* e memoria visiva. Ogni nucleo mette in dialogo immagini con scale differenti, affinita formali e scarti narrativi.\n\n### Chiavi di lettura\n1. rapporto tra superficie e profondita\n2. tensione tra documento e interpretazione\n3. costruzione di una grammatica visiva coerente\n\n> Nota: questo testo e un template di base. Personalizzalo con riferimenti puntuali a mostra, opere e cronologia.\n\nPer approfondimenti critici: [scheda progetto](https://example.com).";
+const DEFAULT_THEME_FONT = "'Archivo', sans-serif";
+const DEFAULT_PAGE_FORMAT_ID = "a6-portrait";
+const DEFAULT_THEME_MARGINS = { top: 15, right: 15, bottom: 15, left: 15 };
 
 const FONT_OPTIONS = [
+  { label: "Archivo", value: "'Archivo', sans-serif" },
   { label: "Cormorant Garamond", value: "'Cormorant Garamond', serif" },
   { label: "IBM Plex Serif", value: "'IBM Plex Serif', serif" },
   { label: "Space Grotesk", value: "'Space Grotesk', sans-serif" },
@@ -33,12 +37,31 @@ const FONT_OPTIONS = [
   { label: "Manrope", value: "'Manrope', sans-serif" },
   { label: "Plus Jakarta Sans", value: "'Plus Jakarta Sans', sans-serif" },
   { label: "Work Sans", value: "'Work Sans', sans-serif" },
-  { label: "Archivo", value: "'Archivo', sans-serif" },
   { label: "Sora", value: "'Sora', sans-serif" },
   { label: "Outfit", value: "'Outfit', sans-serif" },
   { label: "Inter Tight", value: "'Inter Tight', sans-serif" },
   { label: "Fraunces", value: "'Fraunces', serif" },
   { label: "EB Garamond", value: "'EB Garamond', serif" },
+  { label: "Alegreya", value: "'Alegreya', serif" },
+  { label: "Alegreya Sans", value: "'Alegreya Sans', sans-serif" },
+  { label: "Assistant", value: "'Assistant', sans-serif" },
+  { label: "Barlow Condensed", value: "'Barlow Condensed', sans-serif" },
+  { label: "Cardo", value: "'Cardo', serif" },
+  { label: "Cormorant Infant", value: "'Cormorant Infant', serif" },
+  { label: "Cormorant SC", value: "'Cormorant SC', serif" },
+  { label: "Domine", value: "'Domine', serif" },
+  { label: "Forum", value: "'Forum', serif" },
+  { label: "Josefin Sans", value: "'Josefin Sans', sans-serif" },
+  { label: "Libre Franklin", value: "'Libre Franklin', sans-serif" },
+  { label: "Literata", value: "'Literata', serif" },
+  { label: "Marcellus", value: "'Marcellus', serif" },
+  { label: "Noto Sans", value: "'Noto Sans', sans-serif" },
+  { label: "Noto Serif", value: "'Noto Serif', serif" },
+  { label: "Old Standard TT", value: "'Old Standard TT', serif" },
+  { label: "Prata", value: "'Prata', serif" },
+  { label: "Public Sans", value: "'Public Sans', sans-serif" },
+  { label: "Tenor Sans", value: "'Tenor Sans', sans-serif" },
+  { label: "Urbanist", value: "'Urbanist', sans-serif" },
 ];
 
 const WORK_FIELDS = [
@@ -377,7 +400,7 @@ function createFullWidthTextBlock(spec, areaWidth, y, themeTitleSize = 26) {
   };
 }
 
-function createInsideFrontCoverPage(marginsOverride, pageFormatId = "a4-portrait", themeCfg = null) {
+function createInsideFrontCoverPage(marginsOverride, pageFormatId = DEFAULT_PAGE_FORMAT_ID, themeCfg = null) {
   const page = createPage("inside-front-cover", "Seconda di copertina", marginsOverride);
   page.showPageNumber = false;
   page.bgColor = "#ffffff";
@@ -408,7 +431,7 @@ function createInsideBackCoverPage(marginsOverride) {
   return page;
 }
 
-function createPrefacePage(marginsOverride, bgColor = "#ffffff", borderPct = 3, pageFormatId = "a4-portrait", themeCfg = null) {
+function createPrefacePage(marginsOverride, bgColor = "#ffffff", borderPct = 3, pageFormatId = DEFAULT_PAGE_FORMAT_ID, themeCfg = null) {
   const page = createPage("page", "Prefazione", marginsOverride);
   page.bgColor = bgColor;
   const titleMd = themeCfg?.defaultPrefaceTitleMd || DEFAULT_PREFACE_TITLE_MD;
@@ -458,7 +481,7 @@ function createPage(type = "page", title = "Pagina", marginsOverride) {
     pageNumber: 1,
     showPageNumber: true,
     pageNumberColor: "#6b614f",
-    margins: marginsOverride || { top: 28, right: 28, bottom: 38, left: 28 },
+    margins: marginsOverride || { ...DEFAULT_THEME_MARGINS },
     textBlocks: [],
     placements: [],
   };
@@ -472,17 +495,17 @@ function createRenderSpacerPage(id, title, marginsOverride) {
     bgColor: "#ffffff",
     showPageNumber: false,
     pageNumberColor: "#6b614f",
-    margins: marginsOverride || { top: 28, right: 28, bottom: 38, left: 28 },
+    margins: marginsOverride || { ...DEFAULT_THEME_MARGINS },
     textBlocks: [],
     placements: [],
   };
 }
 
 function createDefaultState(themeSeed = null) {
-  const defaultMargins = { top: 28, right: 28, bottom: 38, left: 28 };
+  const defaultMargins = { ...DEFAULT_THEME_MARGINS };
   const seed = themeSeed || {};
   const theme = {
-    fontFamily: FONT_OPTIONS[2].value,
+    fontFamily: DEFAULT_THEME_FONT,
     bodyFontSize: 15,
     titleFontSize: 26,
     fontWeight: 400,
@@ -509,7 +532,7 @@ function createDefaultState(themeSeed = null) {
   coverFront.showPageNumber = false;
   coverFront.bgColor = "#ffffff";
   {
-    const coverArea = getPageContentBounds(coverFront, "a4-portrait");
+    const coverArea = getPageContentBounds(coverFront, DEFAULT_PAGE_FORMAT_ID);
     const titleBlock = createFullWidthTextBlock(
       {
         text: "CATALOGO OPERE",
@@ -542,7 +565,7 @@ function createDefaultState(themeSeed = null) {
   const innerPage = createPage("page", "Pagina 1", projectMargins);
   innerPage.pageNumber = 1;
   {
-    const innerArea = getPageContentBounds(innerPage, "a4-portrait");
+    const innerArea = getPageContentBounds(innerPage, DEFAULT_PAGE_FORMAT_ID);
     innerPage.textBlocks = [
       createFullWidthTextBlock(
         {
@@ -563,7 +586,7 @@ function createDefaultState(themeSeed = null) {
   coverBack.showPageNumber = false;
   coverBack.bgColor = "#ffffff";
   {
-    const backArea = getPageContentBounds(coverBack, "a4-portrait");
+    const backArea = getPageContentBounds(coverBack, DEFAULT_PAGE_FORMAT_ID);
     const topPad = Math.max(18, Math.round(backArea.height * 0.05));
     const gap = Math.max(10, Math.round(backArea.height * 0.03));
     const summaryBlock = createFullWidthTextBlock(
@@ -614,10 +637,11 @@ function createDefaultState(themeSeed = null) {
     activePageId: innerPage.id,
     selectedElement: null,
     theme,
-    pageFormat: "a4-portrait",
+    pageFormat: DEFAULT_PAGE_FORMAT_ID,
     summaryPageEdits: {},
+    hiddenPageIds: [],
     specialPages: {
-      insideFront: createInsideFrontCoverPage(projectMargins, "a4-portrait", theme),
+      insideFront: createInsideFrontCoverPage(projectMargins, DEFAULT_PAGE_FORMAT_ID, theme),
       insideBack: createInsideBackCoverPage(projectMargins),
     },
     layoutAssist: {
@@ -778,6 +802,7 @@ function loadState() {
       ...parsed,
       theme,
       summaryPageEdits: parsed.summaryPageEdits || {},
+      hiddenPageIds: Array.isArray(parsed.hiddenPageIds) ? parsed.hiddenPageIds : [],
       specialPages: {
         insideFront: {
           ...baseSpecial.insideFront,
@@ -816,32 +841,14 @@ function buildSummaryPageMarkdown(entries, pageIndex = 0) {
   return `${heading}\n\n${entries.join("\n")}`;
 }
 
-function paginateSummaryEntries(entries, area, fontSize, borderWidthPct, themeTitleSize) {
-  if (!entries.length) return [buildSummaryPageMarkdown([], 0)];
-  const pages = [];
-  let pageIndex = 0;
-  let cursor = 0;
-
-  while (cursor < entries.length) {
-    let accepted = [];
-    let probe = cursor;
-
-    while (probe < entries.length) {
-      const nextAccepted = [...accepted, entries[probe]];
-      const candidateText = buildSummaryPageMarkdown(nextAccepted, pageIndex);
-      const candidateHeight = estimateTextBlockHeight(candidateText, area.width, fontSize, borderWidthPct, themeTitleSize);
-      if (candidateHeight > area.height && accepted.length > 0) break;
-      accepted = nextAccepted;
-      probe += 1;
-      if (candidateHeight > area.height) break;
-    }
-
-    pages.push(buildSummaryPageMarkdown(accepted, pageIndex));
-    cursor += Math.max(1, accepted.length);
-    pageIndex += 1;
+function fitSummaryFontSizeToSinglePage(text, area, initialFontSize, borderWidthPct, themeTitleSize) {
+  let fontSize = Math.max(6, Number(initialFontSize) || 11);
+  while (fontSize > 6) {
+    const height = estimateTextBlockHeight(text, area.width, fontSize, borderWidthPct, themeTitleSize);
+    if (height <= area.height) return fontSize;
+    fontSize -= 1;
   }
-
-  return pages;
+  return 6;
 }
 
 function summaryPagesFromWorks(
@@ -852,11 +859,11 @@ function summaryPagesFromWorks(
   defaultBgColor = "#ffffff",
   defaultBorderPct = 3,
   defaultPageNumberColor = "#6b614f",
-  pageFormatId = "a4-portrait",
+  pageFormatId = DEFAULT_PAGE_FORMAT_ID,
 ) {
   const margins = marginsOverride || { top: 28, right: 26, bottom: 38, left: 26 };
   const area = getPageContentBounds({ margins }, pageFormatId);
-  const listFontSize = Math.max(11, Math.round(area.height * 0.045));
+  const baseFontSize = Math.max(11, Math.round(area.height * 0.045));
   const titleSize = Math.max(26, Math.round(area.height * 0.075));
   const entries = (works || []).map((work, idx) => {
     const pageNo = workPageMap.get(work.id);
@@ -866,54 +873,53 @@ function summaryPagesFromWorks(
     const pageLabel = pageNo ?? "-";
     return `${idx + 1}. **${title}** — *${author}* — anno: ${year} — **pag. ${pageLabel}**`;
   });
-  const pageTexts = paginateSummaryEntries(entries, area, listFontSize, defaultBorderPct, titleSize);
-
-  return pageTexts.map((pageText, idx) => {
-    const generatedBlock = {
-      ...createTextBlock(pageText),
-      x: 0,
-      y: 0,
-      w: area.width,
-      h: area.height,
-      fontSize: listFontSize,
-      fontWeight: 400,
-      align: "left",
-      borderWidthPct: defaultBorderPct,
-    };
-    const generated = {
-      id: `summary_${idx}`,
-      type: "summary-page",
-      title: `Elenco opere ${idx + 1}`,
-      bgColor: defaultBgColor || "#ffffff",
-      pageNumber: 1,
-      showPageNumber: true,
-      pageNumberColor: defaultPageNumberColor || "#6b614f",
-      margins,
-      textBlocks: [generatedBlock],
-      placements: [],
-    };
-    const edit = summaryPageEdits?.[generated.id];
-    if (!edit) return generated;
-    const editedBlock = Array.isArray(edit.textBlocks) ? edit.textBlocks[0] : null;
-    const mergedTextBlocks = [
-      {
-        ...generated.textBlocks[0],
-        ...(editedBlock || {}),
-        text: generated.textBlocks[0]?.text || "",
-        x: editedBlock?.x ?? generated.textBlocks[0].x,
-        y: editedBlock?.y ?? generated.textBlocks[0].y,
-        w: editedBlock?.w ?? generated.textBlocks[0].w,
-        h: editedBlock?.h ?? generated.textBlocks[0].h,
-      },
-    ];
-    return {
+  const pageText = buildSummaryPageMarkdown(entries, 0);
+  const listFontSize = fitSummaryFontSizeToSinglePage(pageText, area, baseFontSize, defaultBorderPct, titleSize);
+  const generatedBlock = {
+    ...createTextBlock(pageText),
+    x: 0,
+    y: 0,
+    w: area.width,
+    h: area.height,
+    fontSize: listFontSize,
+    fontWeight: 400,
+    align: "left",
+    borderWidthPct: defaultBorderPct,
+  };
+  const generated = {
+    id: "summary_0",
+    type: "summary-page",
+    title: "Elenco opere",
+    bgColor: defaultBgColor || "#ffffff",
+    pageNumber: 1,
+    showPageNumber: true,
+    pageNumberColor: defaultPageNumberColor || "#6b614f",
+    margins,
+    textBlocks: [generatedBlock],
+    placements: [],
+  };
+  const edit = summaryPageEdits?.[generated.id];
+  if (!edit) return [generated];
+  const editedBlock = Array.isArray(edit.textBlocks) ? edit.textBlocks[0] : null;
+  return [
+    {
       ...generated,
       ...edit,
       margins: { ...(generated.margins || {}), ...(edit.margins || {}) },
-      textBlocks: mergedTextBlocks,
+      textBlocks: [
+        {
+          ...generated.textBlocks[0],
+          ...(editedBlock || {}),
+          text: generated.textBlocks[0]?.text || "",
+          x: editedBlock?.x ?? generated.textBlocks[0].x,
+          y: editedBlock?.y ?? generated.textBlocks[0].y,
+          w: editedBlock?.w ?? generated.textBlocks[0].w,
+          h: editedBlock?.h ?? generated.textBlocks[0].h,
+        },
+      ],
       placements: edit.placements || generated.placements,
-    };
-  });
+    },
+  ];
 }
 
 function scalePageLayoutForFormat(page, fromFormatId, toFormatId, boundMode = "margins") {
@@ -1964,8 +1970,11 @@ export default function App() {
     }));
   }, [state.pages]);
 
-  const editablePages = state.pages;
-  const editableSpecialPages = [state.specialPages?.insideFront, state.specialPages?.insideBack].filter(Boolean);
+  const hiddenPageIds = new Set(state.hiddenPageIds || []);
+  const editablePages = (state.pages || []).filter((page) => page && !hiddenPageIds.has(page.id));
+  const editableSpecialPages = [state.specialPages?.insideFront, state.specialPages?.insideBack].filter(
+    (page) => page && !hiddenPageIds.has(page.id),
+  );
   const currentFormat = getPageFormat(state.pageFormat);
   const frontCover = editablePages[0];
   const backCover = editablePages[editablePages.length - 1];
@@ -1973,8 +1982,14 @@ export default function App() {
     ...page,
     title: page.title || "Pagina",
   }));
-  const insideFrontBlank = state.specialPages?.insideFront || createInsideFrontCoverPage(state.theme.pageMargins);
-  const insideBackBlank = state.specialPages?.insideBack || createInsideBackCoverPage(state.theme.pageMargins);
+  const insideFrontBlank =
+    state.specialPages?.insideFront && !hiddenPageIds.has(state.specialPages.insideFront.id)
+      ? state.specialPages.insideFront
+      : null;
+  const insideBackBlank =
+    state.specialPages?.insideBack && !hiddenPageIds.has(state.specialPages.insideBack.id)
+      ? state.specialPages.insideBack
+      : null;
   const workPageMap = buildWorkFirstPageMapForCatalog(frontCover, insideFrontBlank, innerPages);
   const summaryPages = summaryPagesFromWorks(
     state.works,
@@ -1985,9 +2000,9 @@ export default function App() {
     state.theme.defaultElementBorderPct,
     state.theme.defaultPageNumberColor,
     state.pageFormat,
-  );
+  ).filter((page) => !hiddenPageIds.has(page.id));
   const allEditablePages = [...editablePages, ...editableSpecialPages, ...summaryPages];
-  const renderPagesBase = [frontCover, insideFrontBlank, ...innerPages, ...summaryPages, insideBackBlank, backCover];
+  const renderPagesBase = [frontCover, insideFrontBlank, ...innerPages, insideBackBlank, ...summaryPages, backCover];
   let autoPageCounter = 0;
   const renderPages = renderPagesBase.map((page, idx) => {
     if (!page) return page;
@@ -2310,24 +2325,48 @@ export default function App() {
   }
 
   function addInnerPage() {
-    const newPage = createPage("page", `Pagina ${Math.max(state.pages.length - 1, 1)}`, state.theme.pageMargins);
     patchState((prev) => {
+      const newPage = createPage("page", `Pagina ${Math.max(prev.pages.length - 1, 1)}`, prev.theme?.pageMargins);
       const next = [...prev.pages];
-      next.splice(next.length - 1, 0, newPage);
+      const activeIndex = next.findIndex((page) => page.id === prev.activePageId);
+      const backCoverIndex = Math.max(0, next.length - 1);
+      const insertIndex =
+        activeIndex >= 0 && activeIndex < backCoverIndex
+          ? activeIndex + 1
+          : backCoverIndex;
+      next.splice(insertIndex, 0, newPage);
       return { ...prev, pages: next, activePageId: newPage.id };
     });
   }
 
-  function removeInnerPage(pageId) {
+  function removePage(pageId) {
     patchState((prev) => {
-      if (prev.pages.length <= 3) return prev;
-      const target = prev.pages.find((p) => p.id === pageId);
-      if (!target || target.type !== "page") return prev;
-      const pages = prev.pages.filter((p) => p.id !== pageId);
+      const hiddenIds = new Set(prev.hiddenPageIds || []);
+      const pageIndex = (prev.pages || []).findIndex((p) => p.id === pageId);
+      let pages = prev.pages || [];
+      let nextHiddenPageIds = [...hiddenIds];
+
+      if (pageIndex >= 0) {
+        if (pages.length <= 1) return prev;
+        pages = pages.filter((p) => p.id !== pageId);
+      } else if (!hiddenIds.has(pageId)) {
+        nextHiddenPageIds = [...hiddenIds, pageId];
+      } else {
+        return prev;
+      }
+
+      const nextVisibleMainPages = pages.filter((p) => !nextHiddenPageIds.includes(p.id));
+      const nextActivePageId =
+        nextVisibleMainPages[Math.min(Math.max(pageIndex, 0), Math.max(nextVisibleMainPages.length - 1, 0))]?.id ||
+        nextVisibleMainPages[0]?.id ||
+        (prev.specialPages?.insideFront && !nextHiddenPageIds.includes(prev.specialPages.insideFront.id) ? prev.specialPages.insideFront.id : null) ||
+        (prev.specialPages?.insideBack && !nextHiddenPageIds.includes(prev.specialPages.insideBack.id) ? prev.specialPages.insideBack.id : null) ||
+        null;
       return {
         ...prev,
         pages,
-        activePageId: pages[1]?.id || pages[0]?.id || null,
+        hiddenPageIds: nextHiddenPageIds,
+        activePageId: nextActivePageId,
         selectedElement: null,
       };
     });
@@ -2477,28 +2516,22 @@ export default function App() {
     const dimMap = new Map(dimensions);
     patchState((prev) => {
       const defaultBg = prev.theme?.defaultPageBgColor || "#ffffff";
+      const boundMode = prev.layoutAssist?.boundMode || "margins";
+      const normalizeExistingPage = (page) =>
+        page
+          ? normalizePageForCurrentConstraints(
+              {
+                ...page,
+                margins: { ...(prev.theme?.pageMargins || page.margins) },
+              },
+              prev.pageFormat,
+              boundMode,
+            )
+          : page;
       const frontBase = prev.pages[0] || createDefaultState().pages[0];
       const backBase = prev.pages[prev.pages.length - 1] || createDefaultState().pages.at(-1);
-      const front = { ...frontBase, placements: [], bgColor: defaultBg, margins: { ...(prev.theme?.pageMargins || frontBase.margins) } };
-      const back = { ...backBase, placements: [], bgColor: defaultBg, margins: { ...(prev.theme?.pageMargins || backBase.margins) } };
-      const existingPreface = (prev.pages || []).find((page) => page?.title === "Prefazione" && page.type === "page");
-      let prefacePage = createPrefacePage(
-        prev.theme?.pageMargins,
-        defaultBg,
-        prev.theme?.defaultElementBorderPct ?? 3,
-        prev.pageFormat,
-        prev.theme,
-      );
-      if (existingPreface) {
-        prefacePage = {
-          ...prefacePage,
-          ...existingPreface,
-          id: existingPreface.id,
-          margins: { ...(prev.theme?.pageMargins || prefacePage.margins) },
-          placements: [],
-          textBlocks: existingPreface.textBlocks || prefacePage.textBlocks,
-        };
-      }
+      const front = normalizeExistingPage(frontBase);
+      const back = normalizeExistingPage(backBase);
       const autoPages = buildCatalogLayoutPages(
         prev.works,
         selectedLayoutPreset,
@@ -2509,26 +2542,18 @@ export default function App() {
         null,
         prev.layoutAssist?.boundMode || "margins",
       );
-      const normalizedPreface = existingPreface
-        ? { ...prefacePage, margins: { ...(prev.theme?.pageMargins || prefacePage.margins) } }
-        : normalizePageElementsToBounds(prefacePage, prev.pageFormat, "margins");
-      const pages = [front, normalizedPreface, ...autoPages, back];
+      const pages = [front, ...autoPages, back];
+      const firstAutoPage = autoPages[0] || back || front;
       return {
         ...prev,
         pages,
         specialPages: {
-          insideFront: prev.specialPages?.insideFront
-            ? { ...prev.specialPages.insideFront, placements: [] }
-            : prev.specialPages?.insideFront,
-          insideBack: prev.specialPages?.insideBack
-            ? { ...prev.specialPages.insideBack, placements: [] }
-            : prev.specialPages?.insideBack,
+          insideFront: normalizeExistingPage(prev.specialPages?.insideFront),
+          insideBack: normalizeExistingPage(prev.specialPages?.insideBack),
         },
-        activePageId: normalizedPreface.id,
+        activePageId: firstAutoPage?.id || front?.id || null,
         currentSpread: 0,
-        selectedElement: normalizedPreface.textBlocks?.[0]
-          ? { pageId: normalizedPreface.id, kind: "text", elementId: normalizedPreface.textBlocks[0].id }
-          : null,
+        selectedElement: null,
       };
     });
   }
@@ -3239,7 +3264,7 @@ export default function App() {
             <label className="inline-mini">
               F
               <select
-                value={state.pageFormat || "a4-portrait"}
+                value={state.pageFormat || DEFAULT_PAGE_FORMAT_ID}
                 onChange={(e) => patchState((p) => ({ ...p, pageFormat: e.target.value }))}
               >
                 {PAGE_FORMATS.map((fmt) => (
@@ -3934,28 +3959,28 @@ function ThemePanel({ theme, onChange, onMarginsChange, onClose }) {
           label="Margine top"
           min={0}
           max={80}
-          value={theme.pageMargins?.top ?? 28}
+          value={theme.pageMargins?.top ?? DEFAULT_THEME_MARGINS.top}
           onChange={(v) => onMarginsChange?.({ top: v })}
         />
         <RangeField
           label="Margine right"
           min={0}
           max={80}
-          value={theme.pageMargins?.right ?? 28}
+          value={theme.pageMargins?.right ?? DEFAULT_THEME_MARGINS.right}
           onChange={(v) => onMarginsChange?.({ right: v })}
         />
         <RangeField
           label="Margine bottom"
           min={0}
           max={80}
-          value={theme.pageMargins?.bottom ?? 38}
+          value={theme.pageMargins?.bottom ?? DEFAULT_THEME_MARGINS.bottom}
           onChange={(v) => onMarginsChange?.({ bottom: v })}
         />
         <RangeField
           label="Margine left"
           min={0}
           max={80}
-          value={theme.pageMargins?.left ?? 28}
+          value={theme.pageMargins?.left ?? DEFAULT_THEME_MARGINS.left}
           onChange={(v) => onMarginsChange?.({ left: v })}
         />
       </div>
@@ -4519,9 +4544,10 @@ function PageCanvas({
     const isCaptionFreeDrag = drag.kind === "placement" && drag.handle === "caption" && drag.mode === "move" && !e.shiftKey;
     const gridSize = Math.max(2, layoutAssist?.gridSize || 2);
     const baseThreshold = layoutAssist?.snapThreshold ?? 8;
-    const threshold = isPlacementFreeDrag || isCaptionFreeDrag || altSnapOff ? 0 : Math.max(1, baseThreshold);
-    const snapToGrid = isPlacementFreeDrag || isCaptionFreeDrag || altSnapOff ? false : !!layoutAssist?.snapToGrid;
-    const showGuides = isPlacementFreeDrag || isCaptionFreeDrag || altSnapOff ? false : !!layoutAssist?.showGuides;
+    const snapEnabled = !!layoutAssist?.snapToGrid && !isPlacementFreeDrag && !isCaptionFreeDrag && !altSnapOff;
+    const threshold = snapEnabled ? Math.max(1, baseThreshold) : 0;
+    const snapToGrid = snapEnabled;
+    const showGuides = snapEnabled && !!layoutAssist?.showGuides;
 
     const guideTargetsX = [
       0,
@@ -4623,7 +4649,7 @@ function PageCanvas({
       const draggedW = drag.size?.w ?? 0;
       const draggedH = drag.size?.h ?? 0;
 
-      const enableElementSnap = drag.kind === "placement" && drag.handle === "main" ? !!e.shiftKey : true;
+      const enableElementSnap = snapEnabled && (drag.kind === "placement" && drag.handle === "main" ? !!e.shiftKey : true);
       const elementTargetsX = [];
       const elementTargetsY = [];
       if (enableElementSnap) {
