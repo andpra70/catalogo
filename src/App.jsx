@@ -333,6 +333,7 @@ function stripMarkdownSyntax(line) {
 
 function estimateTextBlockHeight(text, width, fontSize = 16, borderWidthPct = 3, themeTitleSize = 26) {
   const safeWidth = Math.max(40, Number(width) || 40);
+  const safeWidthPx = Math.max(40, mmToCssPx(safeWidth));
   const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
   let total = 0;
   lines.forEach((rawLine) => {
@@ -344,13 +345,13 @@ function estimateTextBlockHeight(text, width, fontSize = 16, borderWidthPct = 3,
     const headingLevel = heading ? heading[1].length : 0;
     const scaleMap = { 1: 1, 2: 0.88, 3: 0.78, 4: 0.68, 5: 0.58, 6: 0.5 };
     const effectiveFont = headingLevel ? Math.max(fontSize, themeTitleSize * (scaleMap[headingLevel] || 0.5)) : fontSize;
-    const charsPerLine = Math.max(8, Math.floor(safeWidth / Math.max(5, effectiveFont * 0.56)));
+    const charsPerLine = Math.max(8, Math.floor(safeWidthPx / Math.max(5, effectiveFont * 0.56)));
     const plain = stripMarkdownSyntax(rawLine);
     const wrappedLines = Math.max(1, Math.ceil(Math.max(1, plain.length) / charsPerLine));
     const lineHeight = effectiveFont * (headingLevel ? 1.12 : 1.2);
     total += wrappedLines * lineHeight + effectiveFont * 0.18;
   });
-  const borderPx = borderPxFromPercent(safeWidth, borderWidthPct, 0, Math.max(48, safeWidth));
+  const borderPx = borderPxFromPercent(safeWidthPx, borderWidthPct, 0, Math.max(48, safeWidthPx));
   return Math.max(
     Math.round(total + borderPx * 2 + 12),
     Math.round(fontSize * 1.5 + borderPx * 2 + 12),
@@ -622,7 +623,7 @@ function createDefaultState(themeSeed = null) {
     layoutAssist: {
       snapToGrid: true,
       showGuides: true,
-      gridSize: 12,
+      gridSize: 2,
       snapThreshold: 8,
       boundMode: "margins",
       distributeRespectMargins: true,
@@ -809,6 +810,40 @@ function defaultPlacementCaption(placement, work) {
   return [workLabel(work), [work?.author, work?.year].filter(Boolean).join(", ")].filter(Boolean).join("\n");
 }
 
+function buildSummaryPageMarkdown(entries, pageIndex = 0) {
+  const heading = pageIndex === 0 ? "# Elenco opere" : `# Elenco opere (${pageIndex + 1})`;
+  if (!entries.length) return `${heading}\n\nNessuna opera inserita.`;
+  return `${heading}\n\n${entries.join("\n")}`;
+}
+
+function paginateSummaryEntries(entries, area, fontSize, borderWidthPct, themeTitleSize) {
+  if (!entries.length) return [buildSummaryPageMarkdown([], 0)];
+  const pages = [];
+  let pageIndex = 0;
+  let cursor = 0;
+
+  while (cursor < entries.length) {
+    let accepted = [];
+    let probe = cursor;
+
+    while (probe < entries.length) {
+      const nextAccepted = [...accepted, entries[probe]];
+      const candidateText = buildSummaryPageMarkdown(nextAccepted, pageIndex);
+      const candidateHeight = estimateTextBlockHeight(candidateText, area.width, fontSize, borderWidthPct, themeTitleSize);
+      if (candidateHeight > area.height && accepted.length > 0) break;
+      accepted = nextAccepted;
+      probe += 1;
+      if (candidateHeight > area.height) break;
+    }
+
+    pages.push(buildSummaryPageMarkdown(accepted, pageIndex));
+    cursor += Math.max(1, accepted.length);
+    pageIndex += 1;
+  }
+
+  return pages;
+}
+
 function summaryPagesFromWorks(
   works,
   marginsOverride,
@@ -819,48 +854,32 @@ function summaryPagesFromWorks(
   defaultPageNumberColor = "#6b614f",
   pageFormatId = "a4-portrait",
 ) {
-  const chunkSize = 14;
-  const chunks = [];
-  for (let i = 0; i < works.length; i += chunkSize) chunks.push(works.slice(i, i + chunkSize));
-  return chunks.map((chunk, idx) => {
-    const area = getPageContentBounds({ margins: marginsOverride || { top: 28, right: 26, bottom: 38, left: 26 } }, pageFormatId);
-    const titleY = Math.max(12, Math.round(area.height * 0.05));
-    const gap = Math.max(8, Math.round(area.height * 0.03));
-    const titleBlock = createFullWidthTextBlock(
-      {
-        text: idx === 0 ? "Elenco opere" : `Elenco opere (${idx + 1})`,
-        fontSize: Math.max(16, Math.round(area.height * 0.075)),
-        fontWeight: 700,
-        align: "left",
-        borderWidthPct: defaultBorderPct,
-      },
-      area.width,
-      titleY,
-      Math.max(26, Math.round(area.height * 0.075)),
-    );
-    const listText =
-      chunk
-        .map((work, rowIdx) => {
-          const pageNo = workPageMap.get(work.id);
-          const title = workLabel(work);
-          const author = work.author?.trim() || "n/d";
-          const year = work.year?.trim() || "n/d";
-          const pageLabel = pageNo ?? "-";
-          return `${idx * chunkSize + rowIdx + 1}. **${title}** — *${author}* — anno: ${year} — **pag. ${pageLabel}**`;
-        })
-        .join("\n") || "Nessuna opera inserita.";
-    const listBlock = createFullWidthTextBlock(
-      {
-        text: listText,
-        fontSize: Math.max(11, Math.round(area.height * 0.045)),
-        fontWeight: 400,
-        align: "left",
-        borderWidthPct: defaultBorderPct,
-      },
-      area.width,
-      titleBlock.y + titleBlock.h + gap,
-      Math.max(26, Math.round(area.height * 0.075)),
-    );
+  const margins = marginsOverride || { top: 28, right: 26, bottom: 38, left: 26 };
+  const area = getPageContentBounds({ margins }, pageFormatId);
+  const listFontSize = Math.max(11, Math.round(area.height * 0.045));
+  const titleSize = Math.max(26, Math.round(area.height * 0.075));
+  const entries = (works || []).map((work, idx) => {
+    const pageNo = workPageMap.get(work.id);
+    const title = workLabel(work);
+    const author = work.author?.trim() || "n/d";
+    const year = work.year?.trim() || "n/d";
+    const pageLabel = pageNo ?? "-";
+    return `${idx + 1}. **${title}** — *${author}* — anno: ${year} — **pag. ${pageLabel}**`;
+  });
+  const pageTexts = paginateSummaryEntries(entries, area, listFontSize, defaultBorderPct, titleSize);
+
+  return pageTexts.map((pageText, idx) => {
+    const generatedBlock = {
+      ...createTextBlock(pageText),
+      x: 0,
+      y: 0,
+      w: area.width,
+      h: area.height,
+      fontSize: listFontSize,
+      fontWeight: 400,
+      align: "left",
+      borderWidthPct: defaultBorderPct,
+    };
     const generated = {
       id: `summary_${idx}`,
       type: "summary-page",
@@ -869,20 +888,23 @@ function summaryPagesFromWorks(
       pageNumber: 1,
       showPageNumber: true,
       pageNumberColor: defaultPageNumberColor || "#6b614f",
-      margins: marginsOverride || { top: 28, right: 26, bottom: 38, left: 26 },
-      textBlocks: [titleBlock, listBlock],
+      margins,
+      textBlocks: [generatedBlock],
       placements: [],
     };
     const edit = summaryPageEdits?.[generated.id];
     if (!edit) return generated;
-    const editedBlocks = Array.isArray(edit.textBlocks) ? edit.textBlocks : generated.textBlocks;
+    const editedBlock = Array.isArray(edit.textBlocks) ? edit.textBlocks[0] : null;
     const mergedTextBlocks = [
-      editedBlocks[0] ? { ...editedBlocks[0] } : generated.textBlocks[0],
       {
-        ...(editedBlocks[1] ? { ...editedBlocks[1] } : generated.textBlocks[1]),
-        text: generated.textBlocks[1]?.text || "",
+        ...generated.textBlocks[0],
+        ...(editedBlock || {}),
+        text: generated.textBlocks[0]?.text || "",
+        x: editedBlock?.x ?? generated.textBlocks[0].x,
+        y: editedBlock?.y ?? generated.textBlocks[0].y,
+        w: editedBlock?.w ?? generated.textBlocks[0].w,
+        h: editedBlock?.h ?? generated.textBlocks[0].h,
       },
-      ...editedBlocks.slice(2),
     ];
     return {
       ...generated,
@@ -894,40 +916,56 @@ function summaryPagesFromWorks(
   });
 }
 
-function scalePageLayoutForFormat(page, fromFormatId, toFormatId) {
+function scalePageLayoutForFormat(page, fromFormatId, toFormatId, boundMode = "margins") {
   if (!page || fromFormatId === toFormatId) return page;
-  const fromFmt = getPageFormat(fromFormatId);
-  const toFmt = getPageFormat(toFormatId);
-  const sx = (toFmt.width || 1) / Math.max(1, fromFmt.width || 1);
-  const sy = (toFmt.height || 1) / Math.max(1, fromFmt.height || 1);
-  const sf = Math.min(sx, sy);
-  const scalePosX = (v) => Math.round((v || 0) * sx);
-  const scalePosY = (v) => Math.round((v || 0) * sy);
-  const scaleSize = (v, minVal) => Math.max(minVal, Math.round((v || 0) * sf));
-  const scaleText = (t) => ({
-    ...t,
-    x: scalePosX(t.x),
-    y: scalePosY(t.y),
-    w: scaleSize(t.w, 40),
-    h: scaleSize(t.h, 24),
-    fontSize: Math.max(10, Math.round((t.fontSize || 16) * sf)),
-  });
+  const fromBox = getPageConstraintBox(page, fromFormatId, boundMode);
+  const toBox = getPageConstraintBox(page, toFormatId, boundMode);
+  const sx = toBox.maxWidth / Math.max(1, fromBox.maxWidth || 1);
+  const sy = toBox.maxHeight / Math.max(1, fromBox.maxHeight || 1);
+  const fontScale = Math.sqrt(Math.max(0.0001, sx * sy));
+  const scalePosX = (v) => Math.round(toBox.minX + (((v ?? fromBox.minX) - fromBox.minX) * sx));
+  const scalePosY = (v) => Math.round(toBox.minY + (((v ?? fromBox.minY) - fromBox.minY) * sy));
+  const scaleSizeX = (v, minVal) => Math.max(minVal, Math.round((v || 0) * sx));
+  const scaleSizeY = (v, minVal) => Math.max(minVal, Math.round((v || 0) * sy));
   const scalePlacement = (p) => ({
     ...p,
     x: scalePosX(p.x),
     y: scalePosY(p.y),
-    w: scaleSize(p.w, 40),
-    h: scaleSize(p.h, 40),
-    captionX: scalePosX(p.captionX ?? p.x ?? 0),
-    captionY: scalePosY(p.captionY ?? 0),
-    captionW: scaleSize(p.captionW, 40),
-    captionH: scaleSize(p.captionH, 24),
+    w: scaleSizeX(p.w, 40),
+    h: scaleSizeY(p.h, 40),
+    captionX: scalePosX(p.captionX ?? p.x ?? fromBox.minX),
+    captionY: scalePosY(p.captionY ?? p.y ?? fromBox.minY),
+    captionW: scaleSizeX(p.captionW, 40),
+    captionH: scaleSizeY(p.captionH, 24),
   });
   return {
     ...page,
-    textBlocks: (page.textBlocks || []).map(scaleText),
-    placements: (page.placements || []).map(scalePlacement),
+    textBlocks: repositionTextBlocksForFormatChange(page, fromFormatId, toFormatId, boundMode),
+    placements: (page.placements || []).map(scalePlacement).map((placement) => normalizePlacementToBounds(placement, toBox)),
   };
+}
+
+function repositionTextBlocksForFormatChange(page, fromFormatId, toFormatId, boundMode = "margins") {
+  if (!page || fromFormatId === toFormatId) return page?.textBlocks || [];
+  const fromBox = getPageConstraintBox(page, fromFormatId, boundMode);
+  const toBox = getPageConstraintBox(page, toFormatId, boundMode);
+  const sx = toBox.maxWidth / Math.max(1, fromBox.maxWidth || 1);
+  const sy = toBox.maxHeight / Math.max(1, fromBox.maxHeight || 1);
+  const fontScale = Math.sqrt(Math.max(0.0001, sx * sy));
+  const scalePosX = (v) => Math.round(toBox.minX + (((v ?? fromBox.minX) - fromBox.minX) * sx));
+  const scalePosY = (v) => Math.round(toBox.minY + (((v ?? fromBox.minY) - fromBox.minY) * sy));
+
+  return (page.textBlocks || []).map((txt) => {
+    const scaledText = {
+      ...txt,
+      x: scalePosX(txt.x),
+      y: scalePosY(txt.y),
+      w: Math.max(40, Math.round((Number(txt.w ?? 220) || 220) * sx)),
+      h: Math.max(24, Math.round((Number(txt.h ?? 100) || 100) * sy)),
+      fontSize: Math.max(10, Math.round((txt.fontSize || 16) * fontScale)),
+    };
+    return normalizeTextBlockToBounds(scaledText, toBox);
+  });
 }
 
 function estimateRenderedInnerBoundsForFormat(page, fromFormatId, toFormatId, canonicalMetric) {
@@ -1152,6 +1190,17 @@ function fitImageMmToBox(work, imageDimensions, maxW, maxH, fallbackAspect = 1) 
 function borderPxFromPercent(sizePx, pct, minPx = 0, maxPx = 64) {
   const p = Number.isFinite(Number(pct)) ? Number(pct) : 5;
   return clampNum(Math.round((Math.max(0, sizePx || 0) * p) / 100), minPx, maxPx);
+}
+
+function mmToPercent(value, total) {
+  const safeTotal = Math.max(0.0001, Number(total) || 0.0001);
+  return `${((Number(value) || 0) * 100) / safeTotal}%`;
+}
+
+function snapValueToGrid(value, enabled, gridSize) {
+  if (!enabled) return Math.round(Number(value) || 0);
+  const safeGrid = Math.max(2, Number(gridSize) || 2);
+  return Math.round((Number(value) || 0) / safeGrid) * safeGrid;
 }
 
 function applyThemeDefaultsToPlacement(placement, theme) {
@@ -1769,6 +1818,11 @@ function fitPageElementsToBoundsSoft(page, pageFormatId, boundMode = "margins") 
   };
 }
 
+function normalizePageForCurrentConstraints(page, pageFormatId, boundMode = "margins") {
+  if (!page) return page;
+  return normalizePageElementsToBounds(page, pageFormatId, boundMode);
+}
+
 function readImageFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1973,12 +2027,8 @@ export default function App() {
       const fromFmt = prevPageFormatRef.current || prev.pageFormat;
       const toFmt = prev.pageFormat;
       const boundMode = prev.layoutAssist?.boundMode || "margins";
-      const canonicalMetric = Object.values(pageMetrics || {}).find((pm) => pm?.pageWidth && pm?.pageHeight) || null;
       const fitPageToNewFormat = (p) => {
-        const scaled = scalePageLayoutForFormat(p, fromFmt, toFmt);
-        return canonicalMetric
-          ? fitPageElementsToEstimatedRenderedBoundsSoft(scaled, fromFmt, toFmt, canonicalMetric, boundMode)
-          : scaled;
+        return scalePageLayoutForFormat(p, fromFmt, toFmt, boundMode);
       };
       return {
         ...prev,
@@ -2057,14 +2107,22 @@ export default function App() {
   function updateGlobalMargins(patch) {
     patchState((prev) => {
       const nextMargins = { ...(prev.theme?.pageMargins || {}), ...patch };
+      const boundMode = prev.layoutAssist?.boundMode || "margins";
+      const applyMarginsAndNormalize = (page) =>
+        page
+          ? normalizePageForCurrentConstraints({ ...page, margins: { ...nextMargins } }, prev.pageFormat, boundMode)
+          : page;
       return {
         ...prev,
         theme: { ...prev.theme, pageMargins: nextMargins },
-        pages: (prev.pages || []).map((page) => ({ ...page, margins: { ...nextMargins } })),
+        pages: (prev.pages || []).map(applyMarginsAndNormalize),
         specialPages: {
-          insideFront: prev.specialPages?.insideFront ? { ...prev.specialPages.insideFront, margins: { ...nextMargins } } : prev.specialPages?.insideFront,
-          insideBack: prev.specialPages?.insideBack ? { ...prev.specialPages.insideBack, margins: { ...nextMargins } } : prev.specialPages?.insideBack,
+          insideFront: applyMarginsAndNormalize(prev.specialPages?.insideFront),
+          insideBack: applyMarginsAndNormalize(prev.specialPages?.insideBack),
         },
+        summaryPageEdits: Object.fromEntries(
+          Object.entries(prev.summaryPageEdits || {}).map(([id, page]) => [id, applyMarginsAndNormalize(page)]),
+        ),
       };
     });
   }
@@ -2282,14 +2340,16 @@ export default function App() {
     if (!activeEditablePage || activeEditablePage.type === "summary") return;
     const bounds = getActivePageLayoutBounds(activeEditablePage);
     const block = createTextBlock("Testo editabile");
+    const snapToGrid = !!state.layoutAssist?.snapToGrid;
+    const gridSize = Math.max(2, state.layoutAssist?.gridSize || 2);
     const targetW = Math.max(120, Math.round(bounds.width * 0.9));
     const borderPx = borderPxFromPercent(targetW, block.borderWidthPct ?? 5, 0, Math.max(48, targetW));
     const minH = Math.ceil((block.fontSize || state.theme.bodyFontSize || 16) * 1.25 + borderPx * 2 + 8);
     block.bgColor = state.theme?.defaultTextBgColor || block.bgColor || "rgba(255, 255, 255, 0.42)";
-    block.w = targetW;
-    block.h = Math.max(block.h || 0, minH);
-    block.x = Math.max(0, Math.round((bounds.width - block.w) / 2));
-    block.y = Math.max(0, Math.round(bounds.height * 0.08));
+    block.w = Math.min(bounds.width, Math.max(120, snapValueToGrid(targetW, snapToGrid, gridSize)));
+    block.h = Math.max(minH, snapValueToGrid(Math.max(block.h || 0, minH), snapToGrid, gridSize));
+    block.x = Math.max(0, snapValueToGrid((bounds.width - block.w) / 2, snapToGrid, gridSize));
+    block.y = Math.max(0, snapValueToGrid(bounds.height * 0.08, snapToGrid, gridSize));
     patchPage(activeEditablePage.id, (page) => ({ ...page, textBlocks: [...page.textBlocks, block] }));
     patchState((prev) => ({ ...prev, selectedElement: { pageId: activeEditablePage.id, kind: "text", elementId: block.id } }));
   }
@@ -2324,12 +2384,8 @@ export default function App() {
   }
 
   function getActivePageLayoutBounds(page) {
-    const measured = pageMetrics?.[page.id];
-    if (measured?.width && measured?.height) {
-      return { width: measured.width, height: measured.height };
-    }
-    const fallback = getPageContentBounds(page, state.pageFormat);
-    return { width: fallback.width, height: fallback.height };
+    const bounds = getPageContentBounds(page, state.pageFormat);
+    return { width: bounds.width, height: bounds.height };
   }
 
   function findEditablePageById(snapshot, pageId) {
@@ -2421,8 +2477,6 @@ export default function App() {
     const dimMap = new Map(dimensions);
     patchState((prev) => {
       const defaultBg = prev.theme?.defaultPageBgColor || "#ffffff";
-      const representativeBounds =
-        Object.values(pageMetrics || {}).find((metric) => metric?.width > 0 && metric?.height > 0) || null;
       const frontBase = prev.pages[0] || createDefaultState().pages[0];
       const backBase = prev.pages[prev.pages.length - 1] || createDefaultState().pages.at(-1);
       const front = { ...frontBase, placements: [], bgColor: defaultBg, margins: { ...(prev.theme?.pageMargins || frontBase.margins) } };
@@ -2452,7 +2506,7 @@ export default function App() {
         prev.theme?.pageMargins,
         dimMap,
         prev.theme,
-        representativeBounds,
+        null,
         prev.layoutAssist?.boundMode || "margins",
       );
       const normalizedPreface = existingPreface
@@ -2678,36 +2732,9 @@ export default function App() {
 
   function normalizeActivePageNow() {
     if (!activeEditablePage) return;
-    const measured = pageMetrics?.[activeEditablePage.id];
-    if (measured?.width && measured?.height) {
-      const box = getRenderedConstraintBox(
-        activeEditablePage,
-        measured.width,
-        measured.height,
-        state.layoutAssist?.boundMode || "margins",
-      );
-      patchState((prev) => ({
-        ...prev,
-        pages: prev.pages.map((p) =>
-          p.id === activeEditablePage.id
-            ? {
-                ...p,
-                placements: (p.placements || []).map((pl) => normalizePlacementToBounds(pl, box)),
-                textBlocks: (p.textBlocks || []).map((t) => normalizeTextBlockToBounds(t, box)),
-              }
-            : p,
-        ),
-      }));
-      return;
-    }
-    patchState((prev) => ({
-      ...prev,
-      pages: prev.pages.map((p) =>
-        p.id === activeEditablePage.id
-          ? normalizePageElementsToBounds(p, prev.pageFormat, prev.layoutAssist?.boundMode || "margins")
-          : p,
-      ),
-    }));
+    patchPage(activeEditablePage.id, (page) =>
+      normalizePageForCurrentConstraints(page, state.pageFormat, state.layoutAssist?.boundMode || "margins"),
+    );
   }
 
   const selectedElementData = (() => {
@@ -3268,11 +3295,12 @@ export default function App() {
                 type="number"
                 min="4"
                 max="48"
-                value={state.layoutAssist?.gridSize ?? 12}
+                step="2"
+                value={state.layoutAssist?.gridSize ?? 2}
                 onChange={(e) =>
                   patchState((p) => ({
                     ...p,
-                    layoutAssist: { ...p.layoutAssist, gridSize: Math.max(4, Number(e.target.value) || 12) },
+                    layoutAssist: { ...p.layoutAssist, gridSize: Math.max(2, Number(e.target.value) || 2) },
                   }))
                 }
               />
@@ -3477,7 +3505,7 @@ export default function App() {
               onMoveElement={() => {}}
               onDropWorkToPage={() => {}}
               onMovePlacementToPage={() => {}}
-                  layoutAssist={{ snapToGrid: false, showGuides: false, gridSize: 12, snapThreshold: 0, boundMode: "margins" }}
+                  layoutAssist={{ snapToGrid: false, showGuides: false, gridSize: 2, snapThreshold: 0, boundMode: "margins" }}
                   pageFormat={state.pageFormat}
                   onDeleteElementDirect={() => {}}
                   zoomScale={1}
@@ -4403,6 +4431,19 @@ function PageCanvas({
   const [guides, setGuides] = useState([]);
   const [inlineEdit, setInlineEdit] = useState(null);
   const [resizeLock, setResizeLock] = useState(null);
+  const [renderMetrics, setRenderMetrics] = useState({ innerWidth: 0, innerHeight: 0, pageWidth: 0, pageHeight: 0 });
+  const format = getPageFormat(pageFormat);
+  const logicalBounds = getPageContentBounds(page, pageFormat);
+  const innerScaleX = renderMetrics.innerWidth > 0 ? renderMetrics.innerWidth / Math.max(1, logicalBounds.width) : 1;
+  const innerScaleY = renderMetrics.innerHeight > 0 ? renderMetrics.innerHeight / Math.max(1, logicalBounds.height) : 1;
+  const pageScale = renderMetrics.pageWidth > 0 ? renderMetrics.pageWidth / Math.max(1, mmToCssPx(format.width)) : 1;
+
+  const placementStyleFromMm = (x, y, w, h) => ({
+    left: mmToPercent(x, logicalBounds.width),
+    top: mmToPercent(y, logicalBounds.height),
+    width: mmToPercent(w, logicalBounds.width),
+    height: mmToPercent(h, logicalBounds.height),
+  });
 
   function startDrag(e, kind, elementId, coords, handle = "main", size = null) {
     e.stopPropagation();
@@ -4468,16 +4509,17 @@ function PageCanvas({
     const drag = dragRef.current;
     if (!drag) return;
     const innerRect = innerRef.current?.getBoundingClientRect();
-    const scale = zoomScale || 1;
-    const width = (innerRect?.width || 0) / scale;
-    const height = (innerRect?.height || 0) / scale;
-    const constraintBox = getRenderedConstraintBox(page, width, height, layoutAssist?.boundMode || "margins");
+    const width = logicalBounds.width;
+    const height = logicalBounds.height;
+    const pxPerMmX = Math.max(0.0001, (innerRect?.width || 0) / Math.max(1, width));
+    const pxPerMmY = Math.max(0.0001, (innerRect?.height || 0) / Math.max(1, height));
+    const constraintBox = getPageConstraintBox(page, pageFormat, layoutAssist?.boundMode || "margins");
     const altSnapOff = e.altKey;
     const isPlacementFreeDrag = drag.kind === "placement" && drag.handle === "main" && drag.mode === "move" && !e.shiftKey;
     const isCaptionFreeDrag = drag.kind === "placement" && drag.handle === "caption" && drag.mode === "move" && !e.shiftKey;
-    const gridSize = Math.max(4, layoutAssist?.gridSize || 12);
+    const gridSize = Math.max(2, layoutAssist?.gridSize || 2);
     const baseThreshold = layoutAssist?.snapThreshold ?? 8;
-    const threshold = isPlacementFreeDrag || isCaptionFreeDrag || altSnapOff ? 0 : Math.max(1, baseThreshold / scale);
+    const threshold = isPlacementFreeDrag || isCaptionFreeDrag || altSnapOff ? 0 : Math.max(1, baseThreshold);
     const snapToGrid = isPlacementFreeDrag || isCaptionFreeDrag || altSnapOff ? false : !!layoutAssist?.snapToGrid;
     const showGuides = isPlacementFreeDrag || isCaptionFreeDrag || altSnapOff ? false : !!layoutAssist?.showGuides;
 
@@ -4514,8 +4556,8 @@ function PageCanvas({
       return Math.round(snapped);
     };
 
-    const dx = Math.round((e.clientX - drag.originX) / scale);
-    const dy = Math.round((e.clientY - drag.originY) / scale);
+    const dx = Math.round((e.clientX - drag.originX) / pxPerMmX);
+    const dy = Math.round((e.clientY - drag.originY) / pxPerMmY);
     if (!drag.lifted && (Math.abs(dx) > 1 || Math.abs(dy) > 1)) drag.lifted = true;
     if (drag.mode === "image-pan") {
       onMoveElement(page.id, "placement", drag.elementId, {
@@ -4654,16 +4696,23 @@ function PageCanvas({
   useEffect(() => {
     const el = innerRef.current;
     const pageEl = pageRef.current;
-    if (!el || !pageEl || !onPageMetrics) return;
+    if (!el || !pageEl) return;
     const emit = () => {
       const rect = el.getBoundingClientRect();
       const pageRect = pageEl.getBoundingClientRect();
       const scale = zoomScale || 1;
-      onPageMetrics(page.id, {
-        width: Math.round(rect.width / scale),
-        height: Math.round(rect.height / scale),
-        pageWidth: Math.round(pageRect.width / scale),
-        pageHeight: Math.round(pageRect.height / scale),
+      const metrics = {
+        innerWidth: rect.width / scale,
+        innerHeight: rect.height / scale,
+        pageWidth: pageRect.width / scale,
+        pageHeight: pageRect.height / scale,
+      };
+      setRenderMetrics(metrics);
+      onPageMetrics?.(page.id, {
+        width: Math.round(metrics.innerWidth),
+        height: Math.round(metrics.innerHeight),
+        pageWidth: Math.round(metrics.pageWidth),
+        pageHeight: Math.round(metrics.pageHeight),
       });
     };
     emit();
@@ -4674,9 +4723,8 @@ function PageCanvas({
   }, [page.id, onPageMetrics, zoomScale, page.margins?.top, page.margins?.right, page.margins?.bottom, page.margins?.left]);
 
   const marginStyle = {
-    inset: `${page.margins?.top ?? 20}px ${page.margins?.right ?? 20}px ${page.margins?.bottom ?? 30}px ${page.margins?.left ?? 20}px`,
+    inset: `${mmToPercent(page.margins?.top ?? 20, format.height)} ${mmToPercent(page.margins?.right ?? 20, format.width)} ${mmToPercent(page.margins?.bottom ?? 30, format.height)} ${mmToPercent(page.margins?.left ?? 20, format.width)}`,
   };
-  const format = getPageFormat(pageFormat);
   const topPlacementZ =
     (page.placements || []).reduce((maxZ, p) => {
       const z = Number(p?.zIndex);
@@ -4705,18 +4753,18 @@ function PageCanvas({
     setDragOver(false);
     const rect = innerRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const innerW = rect.width / (zoomScale || 1);
-    const innerH = rect.height / (zoomScale || 1);
-    const box = getRenderedConstraintBox(page, innerW, innerH, layoutAssist?.boundMode || "margins");
+    const pxPerMmX = Math.max(0.0001, rect.width / Math.max(1, logicalBounds.width));
+    const pxPerMmY = Math.max(0.0001, rect.height / Math.max(1, logicalBounds.height));
+    const box = getPageConstraintBox(page, pageFormat, layoutAssist?.boundMode || "margins");
     const defaultW = 150;
     const defaultH = 190;
     const x = clampNum(
-      Math.round((e.clientX - rect.left) / (zoomScale || 1) - 75),
+      Math.round((e.clientX - rect.left) / pxPerMmX - 75),
       box.minX,
       Math.max(box.minX, box.maxXForWidth(defaultW)),
     );
     const y = clampNum(
-      Math.round((e.clientY - rect.top) / (zoomScale || 1) - 95),
+      Math.round((e.clientY - rect.top) / pxPerMmY - 95),
       box.minY,
       Math.max(box.minY, box.maxYForHeight(defaultH)),
     );
@@ -4761,11 +4809,7 @@ function PageCanvas({
   }
 
   async function maximizePlacementToBounds(placement, work) {
-    const innerRect = innerRef.current?.getBoundingClientRect();
-    const scale = zoomScale || 1;
-    const innerW = (innerRect?.width || 0) / scale;
-    const innerH = (innerRect?.height || 0) / scale;
-    const box = getRenderedConstraintBox(page, innerW, innerH, layoutAssist?.boundMode || "margins");
+    const box = getPageConstraintBox(page, pageFormat, layoutAssist?.boundMode || "margins");
     const imageDimensions = await readImageDimensions(work?.imageUrl);
     const fallbackAspect =
       Number(imageDimensions?.width) > 0 && Number(imageDimensions?.height) > 0
@@ -4795,8 +4839,11 @@ function PageCanvas({
         background: page.bgColor || "#f7f3ea",
         color: theme.textColor,
         fontFamily: theme.fontFamily,
-        fontSize: `${theme.bodyFontSize}px`,
+        fontSize: `${Math.max(1, Math.round(theme.bodyFontSize * pageScale))}px`,
         fontWeight: theme.fontWeight,
+        "--theme-body-size": `${Math.max(1, Math.round(theme.bodyFontSize * pageScale))}px`,
+        "--theme-title-size": `${Math.max(1, Math.round(theme.titleFontSize * pageScale))}px`,
+        "--page-ui-scale": String(Math.max(0.55, pageScale)),
         aspectRatio: `${format.width} / ${format.height}`,
       }}
     >
@@ -4806,7 +4853,7 @@ function PageCanvas({
             <div
               key={`${g.axis}_${g.value}_${idx}`}
               className={`snap-guide ${g.axis}`}
-              style={g.axis === "x" ? { left: g.value } : { top: g.value }}
+              style={g.axis === "x" ? { left: mmToPercent(g.value, logicalBounds.width) } : { top: mmToPercent(g.value, logicalBounds.height) }}
             />
           ))}
         {page.type === "summary" ? (
@@ -4835,18 +4882,15 @@ function PageCanvas({
                       lockActive && !(resizeLock.kind === "placement" && resizeLock.elementId === placement.id && resizeLock.handle === "main");
                     const captionLockedOut =
                       lockActive && !(resizeLock.kind === "placement" && resizeLock.elementId === placement.id && resizeLock.handle === "caption");
-                    const artBorderPx = borderPxFromPercent(placement.w, placement.borderWidthPct ?? 5, 0, Math.max(64, placement.w));
+                    const artBorderPx = borderPxFromPercent(placement.w * innerScaleX, placement.borderWidthPct ?? 5, 0, Math.max(64, placement.w * innerScaleX));
                     const capW = placement.captionW ?? 220;
-                    const capBorderPx = borderPxFromPercent(capW, placement.captionBorderWidthPct ?? 5, 0, Math.max(48, capW));
+                    const capBorderPx = borderPxFromPercent(capW * innerScaleX, placement.captionBorderWidthPct ?? 5, 0, Math.max(48, capW * innerScaleX));
                     return (
                       <>
                   <div
                     className={`draggable-box artwork-box ${isSelected ? "selected" : ""}`}
                     style={{
-                      left: placement.x,
-                      top: placement.y,
-                      width: placement.w,
-                      height: placement.h,
+                      ...placementStyleFromMm(placement.x, placement.y, placement.w, placement.h),
                       zIndex: isSelected ? layerZ + 1000 : layerZ,
                       pointerEvents: placementLockedOut ? "none" : "auto",
                       border: `${artBorderPx}px solid ${placement.borderColor || "#ffffff"}`,
@@ -4893,8 +4937,8 @@ function PageCanvas({
                           top: "50%",
                           width: `${Math.max(1, placement.imageScale ?? 1) * 100}%`,
                           height: `${Math.max(1, placement.imageScale ?? 1) * 100}%`,
-                          objectPosition: `calc(50% + ${Math.round(placement.imageOffsetX ?? 0)}px) calc(50% + ${Math.round(
-                            placement.imageOffsetY ?? 0,
+                          objectPosition: `calc(50% + ${Math.round((placement.imageOffsetX ?? 0) * innerScaleX)}px) calc(50% + ${Math.round(
+                            (placement.imageOffsetY ?? 0) * innerScaleY,
                           )}px)`,
                           transform: "translate(-50%, -50%)",
                           transformOrigin: "center center",
@@ -4951,10 +4995,12 @@ function PageCanvas({
                     <div
                       className={`draggable-box caption-box ${isSelected ? "selected" : ""}`}
                       style={{
-                        left: placement.captionX ?? placement.x,
-                        top: placement.captionY ?? placement.y + placement.h + 8,
-                        width: placement.captionW ?? 220,
-                        height: placement.captionH ?? 70,
+                        ...placementStyleFromMm(
+                          placement.captionX ?? placement.x,
+                          placement.captionY ?? placement.y + placement.h + 8,
+                          placement.captionW ?? 220,
+                          placement.captionH ?? 70,
+                        ),
                         zIndex: isSelected ? layerZ + 1001 : layerZ + 1,
                         pointerEvents: captionLockedOut ? "none" : "auto",
                         border: `${capBorderPx}px solid ${placement.captionBorderColor || "#ffffff"}`,
@@ -5052,21 +5098,18 @@ function PageCanvas({
                 (() => {
                   const textLockedOut =
                     !!resizeLock && !(resizeLock.kind === "text" && resizeLock.elementId === txt.id && resizeLock.handle === "main");
-                  const txtBorderPx = borderPxFromPercent(txt.w, txt.borderWidthPct ?? 5, 0, Math.max(48, txt.w));
+                  const txtBorderPx = borderPxFromPercent(txt.w * innerScaleX, txt.borderWidthPct ?? 5, 0, Math.max(48, txt.w * innerScaleX));
                   return (
                 <div
                   key={txt.id}
                   className={`draggable-box text-box ${isSelected ? "selected" : ""}`}
                   style={{
-                    left: txt.x,
-                    top: txt.y,
-                    width: txt.w,
-                    height: txt.h,
+                    ...placementStyleFromMm(txt.x, txt.y, txt.w, txt.h),
                     zIndex: isSelected ? topPlacementZ + 1 : topPlacementZ,
                     pointerEvents: textLockedOut ? "none" : "auto",
                     color: txt.color || theme.textColor,
                     background: txt.bgColor || theme.defaultTextBgColor || "rgba(255, 255, 255, 0.42)",
-                    fontSize: txt.fontSize || theme.bodyFontSize,
+                    fontSize: `${Math.max(1, Math.round((txt.fontSize || theme.bodyFontSize) * pageScale))}px`,
                     fontWeight: txt.fontWeight || theme.fontWeight,
                     textAlign: txt.align || "left",
                     border: `${txtBorderPx}px solid ${txt.borderColor || "#ffffff"}`,
