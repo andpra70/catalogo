@@ -1425,10 +1425,39 @@ textarea {
   width: auto;
   max-width: none;
   max-height: none;
-  overflow: auto;
+  overflow: hidden;
   padding: 14px;
   gap: 10px;
   align-content: start;
+  display: flex;
+  flex-direction: column;
+}
+
+.floating-panel.template-panel .floating-head,
+.floating-panel.template-panel .template-tabs {
+  flex: 0 0 auto;
+}
+
+.floating-panel.template-panel .stack-fields {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.floating-panel.template-panel .stack-fields label {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.floating-panel.template-panel .stack-fields textarea {
+  flex: 1 1 auto;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  resize: none;
 }
 
 .floating-panel.theme-panel .floating-head {
