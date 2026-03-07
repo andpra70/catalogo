@@ -989,7 +989,7 @@ function scalePageLayoutForFormat(page, fromFormatId, toFormatId, boundMode = "m
 }
 
 function compactPageElementsToFitBounds(page, pageFormatId, boundMode = "margins") {
-  if (!page || page.type === "summary") return page;
+  if (!page) return page;
   const box = getPageConstraintBox(page, pageFormatId, boundMode);
   const entries = [];
   (page.textBlocks || []).forEach((t) => {
@@ -1084,7 +1084,7 @@ function estimateRenderedInnerBoundsForFormat(page, fromFormatId, toFormatId, ca
 }
 
 function fitPageElementsToEstimatedRenderedBoundsSoft(page, fromFormatId, toFormatId, canonicalMetric, boundMode = "margins") {
-  if (!page || page.type === "summary") return page;
+  if (!page) return page;
   const est = estimateRenderedInnerBoundsForFormat(page, fromFormatId, toFormatId, canonicalMetric);
   if (!est) return page;
   const box = getRenderedConstraintBox(page, est.innerWidth, est.innerHeight, boundMode);
@@ -1096,7 +1096,7 @@ function fitPageElementsToEstimatedRenderedBoundsSoft(page, fromFormatId, toForm
 }
 
 function normalizePageElementsToRenderedBounds(page, innerWidth, innerHeight, boundMode = "margins") {
-  if (!page || page.type === "summary") return page;
+  if (!page) return page;
   const box = getRenderedConstraintBox(page, innerWidth, innerHeight, boundMode);
   return {
     ...page,
@@ -1337,11 +1337,17 @@ function applyThemeDefaultsToTextBlock(textBlock, theme) {
   const borderPctDefault = theme?.defaultElementBorderPct;
   const borderColorDefault = theme?.defaultElementBorderColor || theme?.accentColor;
   const textBgDefault = theme?.defaultTextBgColor || "rgba(255, 255, 255, 0.42)";
+  const bodyFontSizeDefault = theme?.bodyFontSize;
+  const fontWeightDefault = theme?.fontWeight;
+  const textColorDefault = theme?.textColor;
   return {
     ...textBlock,
     borderWidthPct: Number.isFinite(Number(borderPctDefault)) ? Number(borderPctDefault) : textBlock.borderWidthPct,
     borderColor: borderColorDefault || textBlock.borderColor,
     bgColor: textBgDefault || textBlock.bgColor,
+    fontSize: Number.isFinite(Number(bodyFontSizeDefault)) ? Number(bodyFontSizeDefault) : textBlock.fontSize,
+    fontWeight: Number.isFinite(Number(fontWeightDefault)) ? Number(fontWeightDefault) : textBlock.fontWeight,
+    color: textColorDefault || textBlock.color,
   };
 }
 
@@ -1920,7 +1926,7 @@ function normalizePlacementToBounds(p, box) {
 }
 
 function normalizePageElementsToBounds(page, pageFormatId, boundMode = "margins") {
-  if (!page || page.type === "summary") return page;
+  if (!page) return page;
   const box = getPageConstraintBox(page, pageFormatId, boundMode);
   return {
     ...page,
@@ -1959,7 +1965,7 @@ function fitPlacementToBoundsSoft(p, box) {
 }
 
 function fitPageElementsToBoundsSoft(page, pageFormatId, boundMode = "margins") {
-  if (!page || page.type === "summary") return page;
+  if (!page) return page;
   const box = getPageConstraintBox(page, pageFormatId, boundMode);
   return {
     ...page,
@@ -2530,79 +2536,101 @@ export default function App() {
 
   function addTextToActivePage() {
     if (!activeEditablePage) return;
-    const bounds = getActivePageLayoutBounds(activeEditablePage);
+    const box = getPageConstraintBox(activeEditablePage, state.pageFormat, state.layoutAssist?.boundMode || "margins");
     const block = applyThemeDefaultsToTextBlock(createTextBlock("Testo editabile"), state.theme);
     const snapToGrid = !!state.layoutAssist?.snapToGrid;
     const gridSize = Math.max(2, state.layoutAssist?.gridSize || 2);
-    const targetW = Math.max(120, Math.round(bounds.width * 0.9));
+    const targetW = Math.max(120, Math.round(box.maxWidth * 0.9));
     const borderPx = borderPxFromPercent(targetW, block.borderWidthPct ?? 5, 0, Math.max(48, targetW));
     const minH = Math.ceil((block.fontSize || state.theme.bodyFontSize || 16) * 1.25 + borderPx * 2 + 8);
-    block.w = Math.min(bounds.width, Math.max(120, snapValueToGrid(targetW, snapToGrid, gridSize)));
+    block.w = Math.min(box.maxWidth, Math.max(120, snapValueToGrid(targetW, snapToGrid, gridSize)));
     block.h = Math.max(minH, snapValueToGrid(Math.max(block.h || 0, minH), snapToGrid, gridSize));
-    block.x = Math.max(0, snapValueToGrid((bounds.width - block.w) / 2, snapToGrid, gridSize));
-    block.y = Math.max(0, snapValueToGrid(bounds.height * 0.08, snapToGrid, gridSize));
+    const rawX = snapValueToGrid(box.minX + (box.maxWidth - block.w) / 2, snapToGrid, gridSize);
+    const rawY = snapValueToGrid(box.minY + box.maxHeight * 0.08, snapToGrid, gridSize);
+    block.x = clampNum(rawX, box.minX, Math.max(box.minX, box.maxXForWidth(block.w)));
+    block.y = clampNum(rawY, box.minY, Math.max(box.minY, box.maxYForHeight(block.h)));
     patchPage(activeEditablePage.id, (page) => ({ ...page, textBlocks: [...page.textBlocks, block] }));
     patchState((prev) => ({ ...prev, selectedElement: { pageId: activeEditablePage.id, kind: "text", elementId: block.id } }));
   }
 
   function addRectangleToActivePage() {
     if (!activeEditablePage) return;
-    const bounds = getActivePageLayoutBounds(activeEditablePage);
+    const box = getPageConstraintBox(activeEditablePage, state.pageFormat, state.layoutAssist?.boundMode || "margins");
     const block = applyThemeDefaultsToTextBlock(createTextBlock(""), state.theme);
     block.isRectangle = true;
     block.text = "";
     const snapToGrid = !!state.layoutAssist?.snapToGrid;
     const gridSize = Math.max(2, state.layoutAssist?.gridSize || 2);
-    block.w = Math.min(bounds.width, Math.max(80, snapValueToGrid(Math.round(bounds.width * 0.45), snapToGrid, gridSize)));
-    block.h = Math.min(bounds.height, Math.max(48, snapValueToGrid(Math.round(bounds.height * 0.22), snapToGrid, gridSize)));
-    block.x = Math.max(0, snapValueToGrid((bounds.width - block.w) / 2, snapToGrid, gridSize));
-    block.y = Math.max(0, snapValueToGrid((bounds.height - block.h) / 2, snapToGrid, gridSize));
+    block.w = Math.min(box.maxWidth, Math.max(80, snapValueToGrid(Math.round(box.maxWidth * 0.45), snapToGrid, gridSize)));
+    block.h = Math.min(box.maxHeight, Math.max(48, snapValueToGrid(Math.round(box.maxHeight * 0.22), snapToGrid, gridSize)));
+    const rawX = snapValueToGrid(box.minX + (box.maxWidth - block.w) / 2, snapToGrid, gridSize);
+    const rawY = snapValueToGrid(box.minY + (box.maxHeight - block.h) / 2, snapToGrid, gridSize);
+    block.x = clampNum(rawX, box.minX, Math.max(box.minX, box.maxXForWidth(block.w)));
+    block.y = clampNum(rawY, box.minY, Math.max(box.minY, box.maxYForHeight(block.h)));
     patchPage(activeEditablePage.id, (page) => ({ ...page, textBlocks: [...page.textBlocks, block] }));
     patchState((prev) => ({ ...prev, selectedElement: { pageId: activeEditablePage.id, kind: "text", elementId: block.id } }));
   }
 
   function addWorksIndexToActivePage() {
     if (!activeEditablePage) return;
-    const bounds = getActivePageLayoutBounds(activeEditablePage);
+    const box = getPageConstraintBox(activeEditablePage, state.pageFormat, state.layoutAssist?.boundMode || "margins");
     const block = applyThemeDefaultsToTextBlock(createTextBlock(worksIndexMarkdown), state.theme);
     const snapToGrid = !!state.layoutAssist?.snapToGrid;
     const gridSize = Math.max(2, state.layoutAssist?.gridSize || 2);
     block.systemTextKey = "works-index";
-    block.w = Math.min(bounds.width, Math.max(120, snapValueToGrid(Math.round(bounds.width * 0.9), snapToGrid, gridSize)));
+    block.w = Math.min(box.maxWidth, Math.max(120, snapValueToGrid(Math.round(box.maxWidth * 0.9), snapToGrid, gridSize)));
     block.h = Math.min(
-      bounds.height,
+      box.maxHeight,
       Math.max(
         64,
         estimateTextBlockHeight(worksIndexMarkdown, block.w, block.fontSize, block.borderWidthPct, state.theme?.titleFontSize || 26),
       ),
     );
-    block.x = Math.max(0, snapValueToGrid((bounds.width - block.w) / 2, snapToGrid, gridSize));
-    block.y = Math.max(0, snapValueToGrid(bounds.height * 0.08, snapToGrid, gridSize));
+    const rawX = snapValueToGrid(box.minX + (box.maxWidth - block.w) / 2, snapToGrid, gridSize);
+    const rawY = snapValueToGrid(box.minY + box.maxHeight * 0.08, snapToGrid, gridSize);
+    block.x = clampNum(rawX, box.minX, Math.max(box.minX, box.maxXForWidth(block.w)));
+    block.y = clampNum(rawY, box.minY, Math.max(box.minY, box.maxYForHeight(block.h)));
     patchPage(activeEditablePage.id, (page) => ({ ...page, textBlocks: [...page.textBlocks, block] }));
     patchState((prev) => ({ ...prev, selectedElement: { pageId: activeEditablePage.id, kind: "text", elementId: block.id } }));
   }
 
   async function addSelectedWorkToActivePage() {
     if (!activeEditablePage || activeEditablePage.type === "summary" || !selectedWork) return;
-    const bounds = getActivePageLayoutBounds(activeEditablePage);
+    const box = getPageConstraintBox(activeEditablePage, state.pageFormat, state.layoutAssist?.boundMode || "margins");
     const imageDimensions = await readImageDimensions(selectedWork.imageUrl);
     const captionH = (state.theme?.autoShowCaptionDefault ?? true) ? 46 : 28;
     const captionGap = 8;
-    const maxW = Math.max(80, Math.round(bounds.width * 0.7));
-    const maxH = Math.max(80, Math.round(bounds.height * 0.7) - captionH - captionGap);
+    const maxW = Math.max(80, Math.round(box.maxWidth * 0.7));
+    const maxH = Math.max(80, Math.round(box.maxHeight * 0.7) - captionH - captionGap);
     const fallbackAspect =
       Number(imageDimensions?.width) > 0 && Number(imageDimensions?.height) > 0
         ? Number(imageDimensions.width) / Math.max(1, Number(imageDimensions.height))
         : 1;
     const fitted = fitImageMmToBox(selectedWork, imageDimensions, maxW, maxH, fallbackAspect);
-    const x = Math.max(0, Math.round((bounds.width - fitted.w) / 2));
-    const y = Math.max(0, Math.round((bounds.height - fitted.h - captionH - captionGap) / 2));
+    const x = clampNum(
+      Math.round(box.minX + (box.maxWidth - fitted.w) / 2),
+      box.minX,
+      Math.max(box.minX, box.maxXForWidth(fitted.w)),
+    );
+    const y = clampNum(
+      Math.round(box.minY + (box.maxHeight - fitted.h - captionH - captionGap) / 2),
+      box.minY,
+      Math.max(box.minY, box.maxYForHeight(fitted.h)),
+    );
     const placement = applyThemeDefaultsToPlacement(createPlacementForWork(selectedWork.id, x, y), state.theme);
     placement.w = fitted.w;
     placement.h = fitted.h;
-    placement.captionX = Math.max(0, Math.round((bounds.width - Math.max(160, fitted.w)) / 2));
-    placement.captionY = y + fitted.h + captionGap;
-    placement.captionW = Math.min(bounds.width, Math.max(160, fitted.w));
+    placement.captionW = Math.min(box.maxWidth, Math.max(160, fitted.w));
+    placement.captionX = clampNum(
+      Math.round(box.minX + (box.maxWidth - placement.captionW) / 2),
+      box.minX,
+      Math.max(box.minX, box.maxXForWidth(placement.captionW)),
+    );
+    placement.captionY = clampNum(
+      y + fitted.h + captionGap,
+      box.minY,
+      Math.max(box.minY, box.maxYForHeight(captionH)),
+    );
     placement.captionH = captionH;
     patchPage(activeEditablePage.id, (page) => ({
       ...page,
@@ -3418,13 +3446,9 @@ export default function App() {
               <div className="topbar-overflow">
                 <button onClick={createNewProject}>Nuovo progetto</button>
                 <button onClick={saveProjectQuick}>Salva progetto</button>
-                <button onClick={() => openSaveProjectDialog("saveAs")}>Salva come...</button>
-                <button onClick={renameCurrentProject} disabled={!currentSavedProject}>Rinomina progetto</button>
                 <button onClick={saveThemeQuick}>Salva tema</button>
-                <button onClick={() => openSaveThemeDialog("saveAs")}>Salva tema come...</button>
-                <button onClick={renameCurrentTheme} disabled={!currentThemeId}>Rinomina tema</button>
-                <button onClick={exportCatalogJson}>Esporta JSON</button>
                 <button onClick={printCatalogPdf}>Esporta PDF Book</button>
+                <button onClick={exportCatalogJson}>Esporta JSON</button>
                 <button onClick={() => importJsonRef.current?.click()}>Importa JSON</button>
                 <div className="saved-projects-list">
                   <small>Progetti</small>
@@ -4173,7 +4197,7 @@ function ThemePanel({ theme, onChange, onMarginsChange, onClose }) {
           ))}
         </select>
       </label>
-      <RangeField label="Font base" min={12} max={24} value={theme.bodyFontSize} onChange={(v) => onChange({ bodyFontSize: v })} />
+      <RangeField label="Font base" min={6} max={24} value={theme.bodyFontSize} onChange={(v) => onChange({ bodyFontSize: v })} />
       <RangeField label="Titoli" min={18} max={42} value={theme.titleFontSize} onChange={(v) => onChange({ titleFontSize: v })} />
       <RangeField label="Peso" min={300} max={800} step={100} value={theme.fontWeight} onChange={(v) => onChange({ fontWeight: v })} />
       <label>
@@ -4941,6 +4965,18 @@ function PageCanvas({
     height: mmToPercent(h, logicalBounds.height),
   });
 
+  function isPointerNearElementBorder(e, targetEl, thresholdPx = 8) {
+    const rect = targetEl?.getBoundingClientRect?.();
+    if (!rect) return false;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const nearLeft = x <= thresholdPx;
+    const nearRight = x >= rect.width - thresholdPx;
+    const nearTop = y <= thresholdPx;
+    const nearBottom = y >= rect.height - thresholdPx;
+    return nearLeft || nearRight || nearTop || nearBottom;
+  }
+
   function startDrag(e, kind, elementId, coords, handle = "main", size = null) {
     e.stopPropagation();
     if (kind === "placement" && handle === "main" && (e.altKey || e.shiftKey)) {
@@ -5392,7 +5428,19 @@ function PageCanvas({
                       pointerEvents: placementLockedOut ? "none" : "auto",
                       border: `${artBorderPx}px solid ${placement.borderColor || "#ffffff"}`,
                     }}
-                    onPointerDown={(e) =>
+                    onPointerDown={(e) => {
+                      const nearBorder = isPointerNearElementBorder(e, e.currentTarget);
+                      if (nearBorder) {
+                        startResize(
+                          e,
+                          "placement",
+                          placement.id,
+                          { w: placement.w, h: placement.h },
+                          "main",
+                          { x: placement.x, y: placement.y },
+                        );
+                        return;
+                      }
                       startDrag(
                         e,
                         "placement",
@@ -5409,8 +5457,8 @@ function PageCanvas({
                           w: placement.w,
                           h: placement.h,
                         },
-                      )
-                    }
+                      );
+                    }}
                     onClick={(e) => {
                       e.stopPropagation();
                       onSelectPage();
@@ -5516,17 +5564,31 @@ function PageCanvas({
                       onPointerDown={(e) =>
                         (e.target.closest("a")
                           ? null
-                          : startDrag(
-                              e,
-                              "placement",
-                              placement.id,
-                              {
-                                x: placement.captionX ?? placement.x,
-                                y: placement.captionY ?? placement.y + placement.h + 8,
-                              },
-                              "caption",
-                              { w: placement.captionW ?? 220, h: placement.captionH ?? 70 },
-                            ))
+                          : (() => {
+                              const nearBorder = isPointerNearElementBorder(e, e.currentTarget);
+                              if (nearBorder) {
+                                startResize(
+                                  e,
+                                  "placement",
+                                  placement.id,
+                                  { w: placement.captionW ?? 220, h: placement.captionH ?? 70 },
+                                  "caption",
+                                  { x: placement.captionX ?? placement.x, y: placement.captionY ?? placement.y + placement.h + 8 },
+                                );
+                                return;
+                              }
+                              startDrag(
+                                e,
+                                "placement",
+                                placement.id,
+                                {
+                                  x: placement.captionX ?? placement.x,
+                                  y: placement.captionY ?? placement.y + placement.h + 8,
+                                },
+                                "caption",
+                                { w: placement.captionW ?? 220, h: placement.captionH ?? 70 },
+                              );
+                            })())
                       }
                       onDoubleClick={(e) => {
                         e.stopPropagation();
@@ -5627,6 +5689,11 @@ function PageCanvas({
                     if (e.target.closest("a")) return;
                     if (isEditing) {
                       e.stopPropagation();
+                      return;
+                    }
+                    const nearBorder = isPointerNearElementBorder(e, e.currentTarget);
+                    if (nearBorder) {
+                      startResize(e, "text", txt.id, { w: txt.w, h: txt.h }, "main", { x: txt.x, y: txt.y });
                       return;
                     }
                     startDrag(e, "text", txt.id, { x: txt.x, y: txt.y }, "main", { w: txt.w, h: txt.h });

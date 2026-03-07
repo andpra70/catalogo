@@ -1355,6 +1355,20 @@ textarea {
   align-content: start;
 }
 
+.floating-panel.template-panel {
+  top: 10vh;
+  right: 10vw;
+  bottom: 10vh;
+  left: 10vw;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  overflow: auto;
+  padding: 14px;
+  gap: 10px;
+  align-content: start;
+}
+
 .floating-panel.theme-panel .floating-head {
   position: sticky;
   top: 0;
@@ -1384,17 +1398,6 @@ textarea {
   right: 24px;
   width: min(760px, calc(100vw - 32px));
   max-width: calc(100vw - 32px);
-  padding: 14px;
-  gap: 12px;
-}
-
-.floating-panel.template-panel {
-  top: 12vh;
-  right: 24px;
-  width: min(860px, calc(100vw - 32px));
-  max-width: calc(100vw - 32px);
-  max-height: 76vh;
-  overflow: auto;
   padding: 14px;
   gap: 12px;
 }
