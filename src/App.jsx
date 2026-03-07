@@ -510,6 +510,7 @@ function createDefaultState(themeSeed = null) {
   const theme = {
     fontFamily: DEFAULT_THEME_FONT,
     bodyFontSize: 15,
+    captionFontSize: 15,
     titleFontSize: 26,
     fontWeight: 400,
     textColor: "#111111",
@@ -977,8 +978,8 @@ function scalePageLayoutForFormat(page, fromFormatId, toFormatId, boundMode = "m
     h: scaleSizeY(p.h, 40),
     captionX: scalePosX(p.captionX ?? p.x ?? fromBox.minX),
     captionY: scalePosY(p.captionY ?? p.y ?? fromBox.minY),
-    captionW: scaleSizeX(p.captionW, 40),
-    captionH: scaleSizeY(p.captionH, 24),
+    captionW: scaleSizeX(p.captionW, 5),
+    captionH: scaleSizeY(p.captionH, 5),
   });
   const scaled = {
     ...page,
@@ -1039,8 +1040,8 @@ function compactPageElementsToFitBounds(page, pageFormatId, boundMode = "margins
       h: scaleW(Number(p.h) || 0, 40),
       captionX: Math.round(scaleX(p.captionX ?? p.x ?? 0)),
       captionY: Math.round(scaleY(p.captionY ?? ((p.y ?? 0) + (p.h ?? 0) + 8))),
-      captionW: scaleW(Number(p.captionW) || 0, 40),
-      captionH: scaleW(Number(p.captionH) || 0, 24),
+      captionW: scaleW(Number(p.captionW) || 0, 5),
+      captionH: scaleW(Number(p.captionH) || 0, 5),
       captionFontSize: Math.max(10, Math.round((Number(p.captionFontSize) || 16) * scale)),
     })),
   };
@@ -1062,8 +1063,8 @@ function repositionTextBlocksForFormatChange(page, fromFormatId, toFormatId, bou
       ...txt,
       x: scalePosX(txt.x),
       y: scalePosY(txt.y),
-      w: Math.max(40, Math.round((Number(txt.w ?? 220) || 220) * sx)),
-      h: Math.max(24, Math.round((Number(txt.h ?? 100) || 100) * sy)),
+      w: Math.max(5, Math.round((Number(txt.w ?? 220) || 220) * sx)),
+      h: Math.max(5, Math.round((Number(txt.h ?? 100) || 100) * sy)),
       fontSize: Math.max(10, Math.round((txt.fontSize || 16) * fontScale)),
     };
     return normalizeTextBlockToBounds(scaledText, toBox);
@@ -1317,12 +1318,17 @@ function applyThemeDefaultsToPlacement(placement, theme) {
   const borderColorDefault = theme?.defaultElementBorderColor || theme?.accentColor;
   const captionBorderColorDefault = theme?.defaultCaptionBorderColor || theme?.accentColor || borderColorDefault;
   const textBgDefault = theme?.defaultTextBgColor || "rgba(255, 255, 255, 0.42)";
+  const captionFontSizeDefault = theme?.captionFontSize;
   return {
     ...placement,
     borderWidthPct: Number.isFinite(Number(borderPctDefault)) ? Number(borderPctDefault) : placement.borderWidthPct,
     borderColor: borderColorDefault || placement.borderColor,
     showCaption: typeof showCaptionDefault === "boolean" ? showCaptionDefault : placement.showCaption,
-    captionFontSize: Number.isFinite(Number(placement.captionFontSize)) ? Number(placement.captionFontSize) : theme?.bodyFontSize || 16,
+    captionFontSize: Number.isFinite(Number(captionFontSizeDefault))
+      ? Number(captionFontSizeDefault)
+      : Number.isFinite(Number(placement.captionFontSize))
+        ? Number(placement.captionFontSize)
+        : 16,
     captionFontWeight: Number.isFinite(Number(placement.captionFontWeight)) ? Number(placement.captionFontWeight) : theme?.fontWeight || 500,
     captionColor: placement.captionColor || theme?.textColor || "#1f1f1f",
     captionBgColor: placement.captionBgColor || textBgDefault,
@@ -1360,6 +1366,7 @@ function applyThemeAutoDefaultsToPage(page, theme) {
   const borderColorDefault = theme?.defaultElementBorderColor || theme?.accentColor;
   const captionBorderColorDefault = theme?.defaultCaptionBorderColor || theme?.accentColor || borderColorDefault;
   const textBgDefault = theme?.defaultTextBgColor || "rgba(255, 255, 255, 0.42)";
+  const captionFontSizeDefault = theme?.captionFontSize;
   return {
     ...page,
     bgColor: bgColorDefault,
@@ -1369,7 +1376,11 @@ function applyThemeAutoDefaultsToPage(page, theme) {
       showCaption: showCaptionDefault,
       borderWidthPct: borderPctDefault,
       borderColor: borderColorDefault || p.borderColor,
-      captionFontSize: Number.isFinite(Number(p.captionFontSize)) ? Number(p.captionFontSize) : theme?.bodyFontSize || 16,
+      captionFontSize: Number.isFinite(Number(captionFontSizeDefault))
+        ? Number(captionFontSizeDefault)
+        : Number.isFinite(Number(p.captionFontSize))
+          ? Number(p.captionFontSize)
+          : 16,
       captionFontWeight: Number.isFinite(Number(p.captionFontWeight)) ? Number(p.captionFontWeight) : theme?.fontWeight || 500,
       captionColor: p.captionColor || theme?.textColor || "#1f1f1f",
       captionBgColor: p.captionBgColor || textBgDefault,
@@ -1874,16 +1885,16 @@ function buildCatalogLayoutPages(works, presetId, pageFormatId, margins, dimMap,
 }
 
 function normalizeTextBlockToBounds(txt, box) {
-  const w = clampNum(txt.w ?? 220, 40, box.maxWidth);
-  const h = clampNum(txt.h ?? 100, 28, box.maxHeight);
+  const w = clampNum(txt.w ?? 220, 5, box.maxWidth);
+  const h = clampNum(txt.h ?? 100, 5, box.maxHeight);
   const x = clampNum(txt.x ?? 0, box.minX, Math.max(box.minX, box.maxXForWidth(w)));
   const y = clampNum(txt.y ?? 0, box.minY, Math.max(box.minY, box.maxYForHeight(h)));
   return { ...txt, x, y, w, h };
 }
 
 function resolveCaptionBoundsForPlacement(p, box, x, y, w, h, { soft = false } = {}) {
-  const minW = 40;
-  const minH = 24;
+  const minW = 5;
+  const minH = 5;
   const rawCaptionW = Math.max(minW, Number(p.captionW ?? 220));
   const rawCaptionH = Math.max(minH, Number(p.captionH ?? 52));
   const captionW = soft && rawCaptionW > box.maxWidth ? Math.max(minW, box.maxWidth) : clampNum(rawCaptionW, minW, box.maxWidth);
@@ -1936,10 +1947,10 @@ function normalizePageElementsToBounds(page, pageFormatId, boundMode = "margins"
 }
 
 function fitTextBlockToBoundsSoft(txt, box) {
-  const rawW = Math.max(40, Number(txt.w ?? 220));
-  const rawH = Math.max(28, Number(txt.h ?? 100));
-  const w = rawW > box.maxWidth ? Math.max(40, box.maxWidth) : rawW;
-  const h = rawH > box.maxHeight ? Math.max(28, box.maxHeight) : rawH;
+  const rawW = Math.max(5, Number(txt.w ?? 220));
+  const rawH = Math.max(5, Number(txt.h ?? 100));
+  const w = rawW > box.maxWidth ? Math.max(5, box.maxWidth) : rawW;
+  const h = rawH > box.maxHeight ? Math.max(5, box.maxHeight) : rawH;
   const x = clampNum(txt.x ?? 0, box.minX, Math.max(box.minX, box.maxXForWidth(w)));
   const y = clampNum(txt.y ?? 0, box.minY, Math.max(box.minY, box.maxYForHeight(h)));
   return { ...txt, x, y, w: Math.round(w), h: Math.round(h) };
@@ -2248,7 +2259,8 @@ export default function App() {
       const hasBorderColorPatch = Object.prototype.hasOwnProperty.call(patch, "defaultElementBorderColor");
       const hasPageNumberColorPatch = Object.prototype.hasOwnProperty.call(patch, "defaultPageNumberColor");
       const hasTextBgPatch = Object.prototype.hasOwnProperty.call(patch, "defaultTextBgColor");
-      if (!hasBgPatch && !hasCoverBgPatch && !hasBorderPatch && !hasBorderColorPatch && !hasPageNumberColorPatch && !hasTextBgPatch) {
+      const hasCaptionFontSizePatch = Object.prototype.hasOwnProperty.call(patch, "captionFontSize");
+      if (!hasBgPatch && !hasCoverBgPatch && !hasBorderPatch && !hasBorderColorPatch && !hasPageNumberColorPatch && !hasTextBgPatch && !hasCaptionFontSizePatch) {
         return { ...prev, theme: nextTheme };
       }
       const nextBg = patch.defaultPageBgColor || prev.theme?.defaultPageBgColor || "#ffffff";
@@ -2259,6 +2271,9 @@ export default function App() {
       const nextBorderColor = patch.defaultElementBorderColor || prev.theme?.defaultElementBorderColor || "#ffffff";
       const nextPageNumberColor = patch.defaultPageNumberColor || prev.theme?.defaultPageNumberColor || "#6b614f";
       const nextTextBgColor = patch.defaultTextBgColor || prev.theme?.defaultTextBgColor || "rgba(255, 255, 255, 0.42)";
+      const nextCaptionFontSize = Number.isFinite(Number(patch.captionFontSize))
+        ? Number(patch.captionFontSize)
+        : Number(prev.theme?.captionFontSize) || 16;
       const patchPageElementsBorders = (page) => ({
         ...page,
         bgColor:
@@ -2272,6 +2287,7 @@ export default function App() {
           ...pl,
           borderWidthPct: hasBorderPatch ? nextBorderPct : pl.borderWidthPct,
           borderColor: hasBorderColorPatch ? nextBorderColor : pl.borderColor,
+          captionFontSize: hasCaptionFontSizePatch ? nextCaptionFontSize : pl.captionFontSize,
           captionBorderWidthPct: hasBorderPatch ? nextBorderPct : pl.captionBorderWidthPct,
           captionBorderColor: hasBorderColorPatch ? nextBorderColor : pl.captionBorderColor,
         })),
@@ -2360,9 +2376,30 @@ export default function App() {
     patchState((prev) => {
       const exists = prev.works.some((w) => w.id === incoming.id);
       const works = exists ? prev.works.map((w) => (w.id === incoming.id ? incoming : w)) : [...prev.works, incoming];
+      const nextLine = [incoming?.author, incoming?.year].filter(Boolean).join(", ");
+      const nextCaptionMultiline = [workLabel(incoming), nextLine].filter(Boolean).join("\n").trim();
+      const nextCaptionInline = [workLabel(incoming), nextLine].filter(Boolean).join(" — ").trim();
+      const patchPlacementCaption = (placement) => {
+        if (!placement || placement.workId !== incoming.id) return placement;
+        const current = String(placement.captionOverride || "").trim();
+        if (!current) return placement;
+        const wantsInline = !current.includes("\n");
+        return { ...placement, captionOverride: wantsInline ? nextCaptionInline : nextCaptionMultiline };
+      };
+      const patchPageCaptions = (page) => {
+        if (!page?.placements?.length) return page;
+        const placements = page.placements.map(patchPlacementCaption);
+        const changed = placements.some((pl, idx) => pl !== page.placements[idx]);
+        return changed ? { ...page, placements } : page;
+      };
       return {
         ...prev,
         works,
+        pages: (prev.pages || []).map(patchPageCaptions),
+        specialPages: {
+          insideFront: patchPageCaptions(prev.specialPages?.insideFront),
+          insideBack: patchPageCaptions(prev.specialPages?.insideBack),
+        },
         selectedWorkId: incoming.id,
         selectedElement: exists ? prev.selectedElement : null,
       };
@@ -2964,12 +3001,6 @@ export default function App() {
         },
         selectedElement: null,
       };
-      const targetPage =
-        next.pages.find((p) => p.id === sel.pageId) ||
-        (next.specialPages?.insideFront?.id === sel.pageId ? next.specialPages.insideFront : null) ||
-        (next.specialPages?.insideBack?.id === sel.pageId ? next.specialPages.insideBack : null);
-      const elementsLeft = (targetPage?.textBlocks?.length || 0) + (targetPage?.placements?.length || 0);
-      if (targetPage && elementsLeft === 0) return removePageInSnapshot(next, sel.pageId);
       return next;
     });
   }
@@ -2997,12 +3028,6 @@ export default function App() {
         },
         selectedElement: isSame ? null : prev.selectedElement,
       };
-      const targetPage =
-        next.pages.find((p) => p.id === sel.pageId) ||
-        (next.specialPages?.insideFront?.id === sel.pageId ? next.specialPages.insideFront : null) ||
-        (next.specialPages?.insideBack?.id === sel.pageId ? next.specialPages.insideBack : null);
-      const elementsLeft = (targetPage?.textBlocks?.length || 0) + (targetPage?.placements?.length || 0);
-      if (targetPage && elementsLeft === 0) return removePageInSnapshot(next, sel.pageId);
       return next;
     });
   }
@@ -3084,6 +3109,7 @@ export default function App() {
     a.download = `${baseName}-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    setTopbarMenuOpen(false);
   }
 
   async function importCatalogPayload(payload) {
@@ -3167,13 +3193,16 @@ export default function App() {
     const preferredName = String(state.projectTitle || "").trim();
     if (preferredName) {
       persistProjectByName(preferredName, existing?.id || null);
+      setTopbarMenuOpen(false);
       return;
     }
     if (existing) {
       persistProjectByName(existing.name, existing.id);
+      setTopbarMenuOpen(false);
       return;
     }
     openSaveProjectDialog("save");
+    setTopbarMenuOpen(false);
   }
 
   function renameCurrentProject() {
@@ -3216,9 +3245,11 @@ export default function App() {
     const existing = savedThemes.find((t) => t.id === currentThemeId);
     if (existing) {
       persistThemeByName(existing.name, existing.id);
+      setTopbarMenuOpen(false);
       return;
     }
     openSaveThemeDialog("save");
+    setTopbarMenuOpen(false);
   }
 
   function renameCurrentTheme() {
@@ -3257,6 +3288,7 @@ export default function App() {
       saveThemesIndex(nextList);
       setSavedThemes(nextList);
       if (currentThemeId === themeId) setCurrentThemeId(null);
+      setTopbarMenuOpen(false);
     } catch (err) {
       window.alert(`Eliminazione tema fallita: ${err?.message || "errore locale"}`);
     }
@@ -3302,6 +3334,7 @@ export default function App() {
       saveProjectsIndex(nextList);
       setSavedProjects(nextList);
       if (currentProjectId === projectId) setCurrentProjectId(null);
+      setTopbarMenuOpen(false);
     } catch (err) {
       window.alert(`Eliminazione progetto fallita: ${err?.message || "errore locale"}`);
     }
@@ -3407,7 +3440,6 @@ export default function App() {
       className={`app-shell ${dragDropActive ? "drag-active" : ""}`}
       style={{
         "--theme-font": state.theme.fontFamily,
-        "--theme-color": state.theme.textColor,
         "--accent-color": state.theme.accentColor,
         "--ui-tint": state.theme.uiTint,
         "--paper-shadow": state.theme.paperShadow,
@@ -3416,7 +3448,6 @@ export default function App() {
         "--print-page-w-mm": `${currentFormat.width}mm`,
         "--print-page-h-mm": `${currentFormat.height}mm`,
         fontFamily: state.theme.fontFamily,
-        color: state.theme.textColor,
       }}
       onDrop={onFrameDrop}
       onDragOver={onFrameDragOver}
@@ -3449,7 +3480,14 @@ export default function App() {
                 <button onClick={saveThemeQuick}>Salva tema</button>
                 <button onClick={printCatalogPdf}>Esporta PDF Book</button>
                 <button onClick={exportCatalogJson}>Esporta JSON</button>
-                <button onClick={() => importJsonRef.current?.click()}>Importa JSON</button>
+                <button
+                  onClick={() => {
+                    importJsonRef.current?.click();
+                    setTopbarMenuOpen(false);
+                  }}
+                >
+                  Importa JSON
+                </button>
                 <div className="saved-projects-list">
                   <small>Progetti</small>
                   {!availableProjects.length && <div className="saved-project-row empty">Nessun progetto</div>}
@@ -4242,14 +4280,23 @@ function ThemePanel({ theme, onChange, onMarginsChange, onClose }) {
           onChange={(e) => onChange({ defaultPageNumberColor: e.target.value })}
         />
       </label>
-      <label className="inline-check">
-        <input
-          type="checkbox"
-          checked={theme.autoShowCaptionDefault ?? true}
-          onChange={(e) => onChange({ autoShowCaptionDefault: e.target.checked })}
+      <div className="grid-2">
+        <label className="inline-check">
+          <input
+            type="checkbox"
+            checked={theme.autoShowCaptionDefault ?? true}
+            onChange={(e) => onChange({ autoShowCaptionDefault: e.target.checked })}
+          />
+          Default mostra didascalia (auto)
+        </label>
+        <RangeField
+          label="Font didascalie"
+          min={6}
+          max={42}
+          value={theme.captionFontSize ?? theme.bodyFontSize ?? 16}
+          onChange={(v) => onChange({ captionFontSize: v })}
         />
-        Default mostra didascalia (auto)
-      </label>
+      </div>
       <RangeField
         label="Bordo elementi default %"
         min={0}
@@ -4433,7 +4480,7 @@ function ElementInspector({ kind, data, onChange }) {
           Testo (Markdown)
           <textarea rows={5} value={data.text || ""} onChange={(e) => onChange({ text: e.target.value })} />
         </label>
-        <RangeField label="Font size" min={10} max={42} value={data.fontSize || 16} onChange={(v) => onChange({ fontSize: v })} />
+        <RangeField label="Font size" min={6} max={42} value={data.fontSize || 16} onChange={(v) => onChange({ fontSize: v })} />
         <RangeField label="Peso" min={300} max={800} step={100} value={data.fontWeight || 500} onChange={(v) => onChange({ fontWeight: v })} />
         <label>
           Colore
@@ -4474,7 +4521,7 @@ function ElementInspector({ kind, data, onChange }) {
       </label>
       <RangeField
         label="Font size"
-        min={10}
+        min={6}
         max={42}
         value={data.captionFontSize || data.fontSize || 16}
         onChange={(v) => onChange({ captionFontSize: v })}
@@ -4965,16 +5012,20 @@ function PageCanvas({
     height: mmToPercent(h, logicalBounds.height),
   });
 
-  function isPointerNearElementBorder(e, targetEl, thresholdPx = 8) {
+  function getResizeEdgeFromPointer(e, targetEl, thresholdPx = 8) {
     const rect = targetEl?.getBoundingClientRect?.();
-    if (!rect) return false;
+    if (!rect) return null;
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const nearLeft = x <= thresholdPx;
-    const nearRight = x >= rect.width - thresholdPx;
-    const nearTop = y <= thresholdPx;
-    const nearBottom = y >= rect.height - thresholdPx;
-    return nearLeft || nearRight || nearTop || nearBottom;
+    const distances = [
+      { edge: "w", d: Math.abs(x) },
+      { edge: "e", d: Math.abs(rect.width - x) },
+      { edge: "n", d: Math.abs(y) },
+      { edge: "s", d: Math.abs(rect.height - y) },
+    ].sort((a, b) => a.d - b.d);
+    const nearest = distances[0];
+    if (!nearest || nearest.d > thresholdPx) return null;
+    return nearest.edge;
   }
 
   function startDrag(e, kind, elementId, coords, handle = "main", size = null) {
@@ -5016,15 +5067,16 @@ function PageCanvas({
     window.addEventListener("pointerup", onPointerUp);
   }
 
-  function startResize(e, kind, elementId, size, handle = "main", anchor = { x: 0, y: 0 }) {
+  function startResize(e, kind, elementId, size, handle = "main", anchor = { x: 0, y: 0 }, resizeEdge = "se") {
     e.preventDefault();
     e.stopPropagation();
-    setResizeLock({ kind, elementId, handle });
+    setResizeLock({ kind, elementId, handle, resizeEdge });
     dragRef.current = {
       mode: "resize",
       kind,
       elementId,
       handle,
+      resizeEdge,
       originX: e.clientX,
       originY: e.clientY,
       start: size,
@@ -5107,50 +5159,60 @@ function PageCanvas({
       return;
     }
     if (drag.mode === "resize") {
-      const maxW = Math.max(40, constraintBox.maxWidth - Math.max(0, (drag.anchor?.x ?? 0) - constraintBox.minX));
-      const maxH = Math.max(28, constraintBox.maxHeight - Math.max(0, (drag.anchor?.y ?? 0) - constraintBox.minY));
+      const edge = drag.resizeEdge || "se";
+      const startX = Number(drag.anchor?.x ?? 0);
+      const startY = Number(drag.anchor?.y ?? 0);
+      const isTextBlockResize = drag.kind === "text";
+      const isCaptionResize = drag.kind === "placement" && drag.handle === "caption";
+      const minW = isTextBlockResize || isCaptionResize ? 5 : 40;
+      const minH = isTextBlockResize || isCaptionResize ? 5 : drag.kind === "placement" && drag.handle === "main" ? 40 : 28;
+      const startW = Math.max(minW, Number(drag.start?.w) || minW);
+      const startH = Math.max(minH, Number(drag.start?.h) || minH);
+      let nextX = startX;
+      let nextY = startY;
+      let nextW = startW;
+      let nextH = startH;
+
+      if (edge === "e" || edge === "se") {
+        const maxW = Math.max(minW, constraintBox.maxXForWidth(0) - startX);
+        nextW = clampNum(snapAxis(startW + dx, guideTargetsX, "x"), minW, maxW);
+      }
+      if (edge === "w") {
+        const rawX = startX + dx;
+        const maxX = startX + startW - minW;
+        nextX = clampNum(snapAxis(rawX, guideTargetsX, "x"), constraintBox.minX, maxX);
+        nextW = clampNum(startW + (startX - nextX), minW, constraintBox.maxWidth);
+      }
+      if (edge === "s" || edge === "se") {
+        const maxH = Math.max(minH, constraintBox.maxYForHeight(0) - startY);
+        nextH = clampNum(snapAxis(startH + dy, guideTargetsY, "y"), minH, maxH);
+      }
+      if (edge === "n") {
+        const rawY = startY + dy;
+        const maxY = startY + startH - minH;
+        nextY = clampNum(snapAxis(rawY, guideTargetsY, "y"), constraintBox.minY, maxY);
+        nextH = clampNum(startH + (startY - nextY), minH, constraintBox.maxHeight);
+      }
+
+      nextW = clampNum(nextW, minW, constraintBox.maxWidth);
+      nextH = clampNum(nextH, minH, constraintBox.maxHeight);
+      nextX = clampNum(nextX, constraintBox.minX, Math.max(constraintBox.minX, constraintBox.maxXForWidth(nextW)));
+      nextY = clampNum(nextY, constraintBox.minY, Math.max(constraintBox.minY, constraintBox.maxYForHeight(nextH)));
+
       if (drag.kind === "placement" && drag.handle === "caption") {
-        const nextW = clampNum(snapAxis(drag.start.w + dx, guideTargetsX, "x"), 40, maxW);
-        const nextH = clampNum(snapAxis(drag.start.h + dy, guideTargetsY, "y"), 28, maxH);
-        onMoveElement(page.id, drag.kind, drag.elementId, { captionW: nextW, captionH: nextH });
-      } else if (drag.kind === "placement") {
-        const startW = Math.max(40, Number(drag.start?.w) || 40);
-        const startH = Math.max(40, Number(drag.start?.h) || 40);
-        const ratio = Math.max(0.01, startW / startH);
-        const useWidthDriver = Math.abs(dx / startW) >= Math.abs(dy / startH);
-
-        let nextW;
-        let nextH;
-        if (useWidthDriver) {
-          nextW = clampNum(snapAxis(startW + dx, guideTargetsX, "x"), 40, maxW);
-          nextH = nextW / ratio;
-        } else {
-          nextH = clampNum(snapAxis(startH + dy, guideTargetsY, "y"), 40, maxH);
-          nextW = nextH * ratio;
-        }
-
-        if (nextH > maxH) {
-          nextH = maxH;
-          nextW = nextH * ratio;
-        }
-        if (nextW > maxW) {
-          nextW = maxW;
-          nextH = nextW / ratio;
-        }
-        if (nextH < 40) {
-          nextH = 40;
-          nextW = nextH * ratio;
-        }
-        if (nextW < 40) {
-          nextW = 40;
-          nextH = nextW / ratio;
-        }
-
-        onMoveElement(page.id, drag.kind, drag.elementId, { w: Math.round(nextW), h: Math.round(nextH) });
+        onMoveElement(page.id, drag.kind, drag.elementId, {
+          captionX: Math.round(nextX),
+          captionY: Math.round(nextY),
+          captionW: Math.round(nextW),
+          captionH: Math.round(nextH),
+        });
       } else {
-        const nextW = clampNum(snapAxis(drag.start.w + dx, guideTargetsX, "x"), 40, maxW);
-        const nextH = clampNum(snapAxis(drag.start.h + dy, guideTargetsY, "y"), 28, maxH);
-        onMoveElement(page.id, drag.kind, drag.elementId, { w: nextW, h: nextH });
+        onMoveElement(page.id, drag.kind, drag.elementId, {
+          x: Math.round(nextX),
+          y: Math.round(nextY),
+          w: Math.round(nextW),
+          h: Math.round(nextH),
+        });
       }
     } else {
       const draggedW = drag.size?.w ?? 0;
@@ -5429,8 +5491,8 @@ function PageCanvas({
                       border: `${artBorderPx}px solid ${placement.borderColor || "#ffffff"}`,
                     }}
                     onPointerDown={(e) => {
-                      const nearBorder = isPointerNearElementBorder(e, e.currentTarget);
-                      if (nearBorder) {
+                      const edge = getResizeEdgeFromPointer(e, e.currentTarget);
+                      if (edge) {
                         startResize(
                           e,
                           "placement",
@@ -5438,6 +5500,7 @@ function PageCanvas({
                           { w: placement.w, h: placement.h },
                           "main",
                           { x: placement.x, y: placement.y },
+                          edge,
                         );
                         return;
                       }
@@ -5493,18 +5556,6 @@ function PageCanvas({
                       <div className="img-ph">Nessuna immagine</div>
                     )}
                     {isSelected && (
-                      <button
-                        className="element-delete-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteElementDirect?.({ pageId: page.id, kind: "placement", elementId: placement.id });
-                        }}
-                        title="Rimuovi elemento"
-                      >
-                        ×
-                      </button>
-                    )}
-                    {isSelected && (
                       <span
                         className="element-transfer-btn"
                         draggable
@@ -5522,19 +5573,23 @@ function PageCanvas({
                         ⇄
                       </span>
                     )}
-                    <span
-                      className="resize-handle"
-                      onPointerDown={(e) =>
-                        startResize(
-                          e,
-                          "placement",
-                          placement.id,
-                          { w: placement.w, h: placement.h },
-                          "main",
-                          { x: placement.x, y: placement.y },
-                        )
-                      }
-                    />
+                    {["e", "w", "n", "s"].map((edge) => (
+                      <span
+                        key={edge}
+                        className={`resize-handle edge-${edge}`}
+                        onPointerDown={(e) =>
+                          startResize(
+                            e,
+                            "placement",
+                            placement.id,
+                            { w: placement.w, h: placement.h },
+                            "main",
+                            { x: placement.x, y: placement.y },
+                            edge,
+                          )
+                        }
+                      />
+                    ))}
                   </div>
                   {placement.showCaption && (
                     <div
@@ -5550,7 +5605,7 @@ function PageCanvas({
                         pointerEvents: captionLockedOut ? "none" : "auto",
                         color: placement.captionColor || theme.textColor,
                         background: placement.captionBgColor || theme.defaultTextBgColor || "rgba(255, 255, 255, 0.42)",
-                        fontSize: `${Math.max(1, Math.round((placement.captionFontSize || theme.bodyFontSize) * pageScale))}px`,
+                        fontSize: `${Math.max(1, Math.round((placement.captionFontSize || theme.captionFontSize || theme.bodyFontSize) * pageScale))}px`,
                         fontWeight: placement.captionFontWeight || theme.fontWeight,
                         textAlign: placement.captionAlign || "left",
                         alignItems:
@@ -5565,8 +5620,8 @@ function PageCanvas({
                         (e.target.closest("a")
                           ? null
                           : (() => {
-                              const nearBorder = isPointerNearElementBorder(e, e.currentTarget);
-                              if (nearBorder) {
+                              const edge = getResizeEdgeFromPointer(e, e.currentTarget);
+                              if (edge) {
                                 startResize(
                                   e,
                                   "placement",
@@ -5574,6 +5629,7 @@ function PageCanvas({
                                   { w: placement.captionW ?? 220, h: placement.captionH ?? 70 },
                                   "caption",
                                   { x: placement.captionX ?? placement.x, y: placement.captionY ?? placement.y + placement.h + 8 },
+                                  edge,
                                 );
                                 return;
                               }
@@ -5600,18 +5656,6 @@ function PageCanvas({
                         onSelectElement({ pageId: page.id, kind: "placement", elementId: placement.id });
                       }}
                     >
-                      {isSelected && (
-                        <button
-                          className="element-delete-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onMoveElement?.(page.id, "placement", placement.id, { showCaption: false });
-                          }}
-                          title="Nascondi didascalia"
-                        >
-                          ×
-                        </button>
-                      )}
                       {inlineEdit?.kind === "caption" && inlineEdit?.id === placement.id ? (
                         <textarea
                           className="inline-text-editor caption-inline-editor"
@@ -5638,19 +5682,23 @@ function PageCanvas({
                           dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(defaultPlacementCaption(placement, work), { inline: false }) }}
                         />
                       )}
-                      <span
-                        className="resize-handle"
-                        onPointerDown={(e) =>
-                          startResize(
-                            e,
-                            "placement",
-                            placement.id,
-                            { w: placement.captionW ?? 220, h: placement.captionH ?? 70 },
-                            "caption",
-                            { x: placement.captionX ?? placement.x, y: placement.captionY ?? placement.y + placement.h + 8 },
-                          )
-                        }
-                      />
+                      {["e", "w", "n", "s"].map((edge) => (
+                        <span
+                          key={edge}
+                          className={`resize-handle edge-${edge}`}
+                          onPointerDown={(e) =>
+                            startResize(
+                              e,
+                              "placement",
+                              placement.id,
+                              { w: placement.captionW ?? 220, h: placement.captionH ?? 70 },
+                              "caption",
+                              { x: placement.captionX ?? placement.x, y: placement.captionY ?? placement.y + placement.h + 8 },
+                              edge,
+                            )
+                          }
+                        />
+                      ))}
                     </div>
                   )}
                       </>
@@ -5691,9 +5739,9 @@ function PageCanvas({
                       e.stopPropagation();
                       return;
                     }
-                    const nearBorder = isPointerNearElementBorder(e, e.currentTarget);
-                    if (nearBorder) {
-                      startResize(e, "text", txt.id, { w: txt.w, h: txt.h }, "main", { x: txt.x, y: txt.y });
+                    const edge = getResizeEdgeFromPointer(e, e.currentTarget);
+                    if (edge) {
+                      startResize(e, "text", txt.id, { w: txt.w, h: txt.h }, "main", { x: txt.x, y: txt.y }, edge);
                       return;
                     }
                     startDrag(e, "text", txt.id, { x: txt.x, y: txt.y }, "main", { w: txt.w, h: txt.h });
@@ -5709,18 +5757,6 @@ function PageCanvas({
                     startInlineTextEdit(txt);
                   }}
                 >
-                  {isSelected && (
-                    <button
-                      className="element-delete-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteElementDirect?.({ pageId: page.id, kind: "text", elementId: txt.id });
-                      }}
-                      title="Rimuovi testo"
-                    >
-                      ×
-                    </button>
-                  )}
                   {isRectangle ? null : isEditing ? (
                     <textarea
                       className="inline-text-editor"
@@ -5744,16 +5780,19 @@ function PageCanvas({
                   ) : (
                     <div className="markdown-content" dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(txt.text, { inline: false }) }} />
                   )}
-                  <span
-                    className="resize-handle"
-                    onPointerDown={(e) => {
-                      if (isEditing) {
-                        e.stopPropagation();
-                        return;
-                      }
-                      startResize(e, "text", txt.id, { w: txt.w, h: txt.h }, "main", { x: txt.x, y: txt.y });
-                    }}
-                  />
+                  {["e", "w", "n", "s"].map((edge) => (
+                    <span
+                      key={edge}
+                      className={`resize-handle edge-${edge}`}
+                      onPointerDown={(e) => {
+                        if (isEditing) {
+                          e.stopPropagation();
+                          return;
+                        }
+                        startResize(e, "text", txt.id, { w: txt.w, h: txt.h }, "main", { x: txt.x, y: txt.y }, edge);
+                      }}
+                    />
+                  ))}
                 </div>
                   );
                 })()
