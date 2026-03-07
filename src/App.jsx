@@ -1562,6 +1562,7 @@ function buildPlacementCaptionForWork(work, slotW, aspectRatio, themeCfg) {
 
 function createPlacementForSlotWork(work, slot, themeCfg, aspectRatio, zIndex = 100, options = {}) {
   const minImageSize = Math.max(5, Number(options?.minImageSizeMm) || 40);
+  const safeAspect = Number.isFinite(Number(aspectRatio)) && Number(aspectRatio) > 0 ? Number(aspectRatio) : null;
   const safeSlot = {
     x: Math.round(slot?.x || 0),
     y: Math.round(slot?.y || 0),
@@ -1571,7 +1572,7 @@ function createPlacementForSlotWork(work, slot, themeCfg, aspectRatio, zIndex = 
   const caption = buildPlacementCaptionForWork(work, safeSlot.w, aspectRatio, themeCfg);
   let captionH = caption.showCaption ? Math.max(5, caption.h || 5) : 5;
   let imageBoxH = Math.max(minImageSize, safeSlot.h - (caption.showCaption ? captionH + caption.gap : 0));
-  let fitted = fitAspectRatioToBox(aspectRatio, safeSlot.w, imageBoxH);
+  let fitted = fitAspectRatioToBox(safeAspect || 1, safeSlot.w, imageBoxH);
   if (caption.showCaption) {
     const captionFontSize = Number(themeCfg?.captionFontSize) || Number(themeCfg?.bodyFontSize) || 16;
     for (let i = 0; i < 2; i += 1) {
@@ -1579,7 +1580,7 @@ function createPlacementForSlotWork(work, slot, themeCfg, aspectRatio, zIndex = 
       if (Math.abs(nextCaptionH - captionH) < 1) break;
       captionH = nextCaptionH;
       imageBoxH = Math.max(minImageSize, safeSlot.h - (captionH + caption.gap));
-      fitted = fitAspectRatioToBox(aspectRatio, safeSlot.w, imageBoxH);
+      fitted = fitAspectRatioToBox(safeAspect || 1, safeSlot.w, imageBoxH);
     }
   }
   const x = Math.round(safeSlot.x + (safeSlot.w - fitted.w) / 2);
@@ -1589,6 +1590,7 @@ function createPlacementForSlotWork(work, slot, themeCfg, aspectRatio, zIndex = 
   placement.w = fitted.w;
   placement.h = fitted.h;
   placement.minSizeMm = minImageSize;
+  placement.imageAspect = safeAspect;
   placement.showCaption = caption.showCaption;
   placement.captionGapMm = getThemeCaptionGapMm(themeCfg, 8);
   placement.captionOverride = caption.text;
@@ -1599,7 +1601,8 @@ function createPlacementForSlotWork(work, slot, themeCfg, aspectRatio, zIndex = 
   return placement;
 }
 
-function createPlacementForExactFrame(work, x, y, w, h, caption, themeCfg, zIndex = 100) {
+function createPlacementForExactFrame(work, x, y, w, h, caption, themeCfg, zIndex = 100, aspectRatio = null) {
+  const safeAspect = Number.isFinite(Number(aspectRatio)) && Number(aspectRatio) > 0 ? Number(aspectRatio) : null;
   const placement = applyThemeDefaultsToPlacement(
     createPlacementForWork(work.id, Math.round(x), Math.round(y)),
     themeCfg,
@@ -1607,6 +1610,7 @@ function createPlacementForExactFrame(work, x, y, w, h, caption, themeCfg, zInde
   placement.zIndex = zIndex;
   placement.w = Math.max(40, Math.round(w));
   placement.h = Math.max(40, Math.round(h));
+  placement.imageAspect = safeAspect;
   placement.showCaption = caption.showCaption;
   placement.captionGapMm = getThemeCaptionGapMm(themeCfg, 8);
   placement.captionOverride = caption.text;
@@ -1668,6 +1672,7 @@ function buildJustifiedRowPlacements(rowItems, y, areaW, gapX, themeCfg, zStart 
       item.caption,
       themeCfg,
       zStart + idx * 10,
+      item.aspect,
     );
     x += slotW + gapX;
     return placement;
@@ -1731,6 +1736,7 @@ function buildQuadGridPlacements(works, areaW, areaH, dimMap, themeCfg) {
           captions[colIdx],
           themeCfg,
           100 + placements.length * 10,
+          item.aspect,
         ),
       );
     });
@@ -2124,6 +2130,172 @@ function readImageDimensions(src) {
   });
 }
 
+function dataUrlToBytes(src) {
+  const raw = String(src || "");
+  const base64Idx = raw.indexOf(";base64,");
+  if (base64Idx < 0) return null;
+  const payload = raw.slice(base64Idx + 8).replace(/\s+/g, "");
+  if (!payload) return null;
+  try {
+    const bin = atob(payload);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+function parseJpegDpi(bytes) {
+  if (!bytes || bytes.length < 4) return null;
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+  let pos = 2;
+  while (pos + 3 < bytes.length) {
+    if (bytes[pos] !== 0xff) {
+      pos += 1;
+      continue;
+    }
+    while (pos < bytes.length && bytes[pos] === 0xff) pos += 1;
+    if (pos >= bytes.length) break;
+    const marker = bytes[pos];
+    pos += 1;
+    if (marker === 0xd8 || marker === 0x01) continue;
+    if (marker === 0xd9 || marker === 0xda) break;
+    if (pos + 1 >= bytes.length) break;
+    const len = ((bytes[pos] || 0) << 8) | (bytes[pos + 1] || 0);
+    if (len < 2 || pos + len > bytes.length) break;
+    if (marker === 0xe0 && len >= 14) {
+      const jfif =
+        bytes[pos + 2] === 0x4a &&
+        bytes[pos + 3] === 0x46 &&
+        bytes[pos + 4] === 0x49 &&
+        bytes[pos + 5] === 0x46 &&
+        bytes[pos + 6] === 0x00;
+      if (jfif) {
+        const units = bytes[pos + 7] || 0;
+        const xDen = ((bytes[pos + 8] || 0) << 8) | (bytes[pos + 9] || 0);
+        const yDen = ((bytes[pos + 10] || 0) << 8) | (bytes[pos + 11] || 0);
+        const den = xDen > 0 && yDen > 0 ? (xDen + yDen) / 2 : Math.max(xDen, yDen);
+        if (den > 0) {
+          if (units === 1) return den;
+          if (units === 2) return den * 2.54;
+        }
+      }
+    }
+    pos += len;
+  }
+  return null;
+}
+
+function parsePngDpi(bytes) {
+  if (!bytes || bytes.length < 33) return null;
+  const pngSig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  for (let i = 0; i < pngSig.length; i += 1) {
+    if (bytes[i] !== pngSig[i]) return null;
+  }
+  let pos = 8;
+  while (pos + 12 <= bytes.length) {
+    const len = (((bytes[pos] || 0) << 24) | ((bytes[pos + 1] || 0) << 16) | ((bytes[pos + 2] || 0) << 8) | (bytes[pos + 3] || 0)) >>> 0;
+    const typeA = bytes[pos + 4];
+    const typeB = bytes[pos + 5];
+    const typeC = bytes[pos + 6];
+    const typeD = bytes[pos + 7];
+    const dataStart = pos + 8;
+    const dataEnd = dataStart + len;
+    if (dataEnd + 4 > bytes.length) break;
+    const isPhys = typeA === 0x70 && typeB === 0x48 && typeC === 0x59 && typeD === 0x73; // pHYs
+    if (isPhys && len >= 9) {
+      const xPpm =
+        (((bytes[dataStart] || 0) << 24) |
+          ((bytes[dataStart + 1] || 0) << 16) |
+          ((bytes[dataStart + 2] || 0) << 8) |
+          (bytes[dataStart + 3] || 0)) >>>
+        0;
+      const yPpm =
+        (((bytes[dataStart + 4] || 0) << 24) |
+          ((bytes[dataStart + 5] || 0) << 16) |
+          ((bytes[dataStart + 6] || 0) << 8) |
+          (bytes[dataStart + 7] || 0)) >>>
+        0;
+      const unit = bytes[dataStart + 8] || 0;
+      if (unit === 1) {
+        const ppm = xPpm > 0 && yPpm > 0 ? (xPpm + yPpm) / 2 : Math.max(xPpm, yPpm);
+        if (ppm > 0) return ppm * 0.0254;
+      }
+    }
+    pos = dataEnd + 4;
+  }
+  return null;
+}
+
+function estimateImageColors(src, maxSide = 256) {
+  return new Promise((resolve) => {
+    if (!src) {
+      resolve(null);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      const srcW = Math.max(1, img.naturalWidth || img.width || 1);
+      const srcH = Math.max(1, img.naturalHeight || img.height || 1);
+      const ratio = Math.min(1, maxSide / Math.max(srcW, srcH));
+      const w = Math.max(1, Math.round(srcW * ratio));
+      const h = Math.max(1, Math.round(srcH * ratio));
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) {
+        resolve(null);
+        return;
+      }
+      try {
+        ctx.drawImage(img, 0, 0, w, h);
+        const data = ctx.getImageData(0, 0, w, h).data;
+        const colors = new Set();
+        for (let i = 0; i < data.length; i += 4) {
+          const a = data[i + 3];
+          if (a === 0) continue;
+          const r = (data[i] || 0) >> 2;
+          const g = (data[i + 1] || 0) >> 2;
+          const b = (data[i + 2] || 0) >> 2;
+          colors.add((r << 12) | (g << 6) | b);
+        }
+        resolve(colors.size);
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+async function readImageInfo(src) {
+  if (!src) return null;
+  const [dims, colorCount] = await Promise.all([readImageDimensions(src), estimateImageColors(src)]);
+  const bytes = dataUrlToBytes(src);
+  const dpi = parseJpegDpi(bytes) ?? parsePngDpi(bytes);
+  return {
+    width: Number(dims?.width) > 0 ? Math.round(Number(dims.width)) : null,
+    height: Number(dims?.height) > 0 ? Math.round(Number(dims.height)) : null,
+    colorCount: Number.isFinite(Number(colorCount)) ? Number(colorCount) : null,
+    fileBytes: bytes?.length || null,
+    dpi: Number.isFinite(Number(dpi)) ? Math.round(Number(dpi)) : null,
+  };
+}
+
+function formatFileSize(bytes) {
+  const size = Number(bytes);
+  if (!Number.isFinite(size) || size <= 0) return "n/d";
+  if (size < 1024) return `${size} B`;
+  const kb = size / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(2)} MB`;
+  return `${(mb / 1024).toFixed(2)} GB`;
+}
+
 export default function App() {
   const [state, setState] = useState(loadState);
   const prevPageFormatRef = useRef(state.pageFormat);
@@ -2142,6 +2314,7 @@ export default function App() {
   const [selectedLayoutPreset, setSelectedLayoutPreset] = useState("masonry");
   const topbarActionsRef = useRef(null);
   const templatePanelRef = useRef(null);
+  const elementClipboardRef = useRef(null);
   const [pageMetrics, setPageMetrics] = useState({});
   const [savedProjects, setSavedProjects] = useState(() => loadProjectsIndex());
   const [currentProjectId, setCurrentProjectId] = useState(null);
@@ -2809,6 +2982,7 @@ export default function App() {
     const placement = applyThemeDefaultsToPlacement(createPlacementForWork(selectedWork.id, x, y), state.theme);
     placement.w = fitted.w;
     placement.h = fitted.h;
+    placement.imageAspect = fallbackAspect;
     placement.captionW = Math.min(box.maxWidth, Math.max(160, fitted.w));
     placement.captionX = clampNum(
       Math.round(box.minX + (box.maxWidth - placement.captionW) / 2),
@@ -2976,6 +3150,7 @@ export default function App() {
     const placement = applyThemeDefaultsToPlacement(createPlacementForWork(workId, safeX, safeY), state.theme);
     placement.w = fitted.w;
     placement.h = fitted.h;
+    placement.imageAspect = fallbackAspect;
     placement.captionGapMm = getThemeCaptionGapMm(state.theme, 8);
     placement.captionX = safeX;
     placement.captionY = safeY + fitted.h + getPlacementCaptionGapMm(placement, 8);
@@ -3214,6 +3389,122 @@ export default function App() {
   })();
 
   const effectiveSelectedWork = selectedPlacementWork || selectedWork;
+
+  useEffect(() => {
+    const cloneData = (data) => {
+      if (!data) return null;
+      if (typeof structuredClone === "function") {
+        try {
+          return structuredClone(data);
+        } catch {
+          return JSON.parse(JSON.stringify(data));
+        }
+      }
+      return JSON.parse(JSON.stringify(data));
+    };
+
+    const isTypingTarget = (target) => {
+      const el = target;
+      if (!el) return false;
+      if (el.isContentEditable) return true;
+      const tag = String(el.tagName || "").toLowerCase();
+      return tag === "input" || tag === "textarea" || tag === "select";
+    };
+
+    function onGlobalKeyDown(e) {
+      if (isTypingTarget(e.target)) return;
+      const key = String(e.key || "");
+      const lowerKey = key.toLowerCase();
+      const hasCmd = !!(e.ctrlKey || e.metaKey);
+
+      if ((key === "Delete" || key === "Backspace") && state.selectedElement) {
+        e.preventDefault();
+        deleteSelectedElement();
+        return;
+      }
+
+      if (hasCmd && !e.shiftKey && !e.altKey && lowerKey === "c") {
+        if (!state.selectedElement) return;
+        const page = findEditablePageById(state, state.selectedElement.pageId);
+        if (!page) return;
+        const payload =
+          state.selectedElement.kind === "text"
+            ? (page.textBlocks || []).find((t) => t.id === state.selectedElement.elementId)
+            : (page.placements || []).find((p) => p.id === state.selectedElement.elementId);
+        if (!payload) return;
+        elementClipboardRef.current = {
+          kind: state.selectedElement.kind,
+          payload: cloneData(payload),
+        };
+        e.preventDefault();
+        return;
+      }
+
+      if (hasCmd && !e.shiftKey && !e.altKey && lowerKey === "v") {
+        const clip = elementClipboardRef.current;
+        if (!clip) return;
+        if (!activeEditablePage || activeEditablePage.type === "summary") return;
+        e.preventDefault();
+        patchState((prev) => {
+          const page = findEditablePageById(prev, prev.activePageId);
+          if (!page || page.type === "summary") return prev;
+          const box = getPageConstraintBox(page, prev.pageFormat, prev.layoutAssist?.boundMode || "margins");
+          const offset = 6;
+          let nextPage = page;
+          let nextSelection = null;
+
+          if (clip.kind === "text") {
+            const source = cloneData(clip.payload);
+            if (!source) return prev;
+            const moved = {
+              ...source,
+              id: uid("txt"),
+              x: (Number(source.x) || 0) + offset,
+              y: (Number(source.y) || 0) + offset,
+            };
+            delete moved.systemTextKey;
+            const pasted = normalizeTextBlockToBounds(moved, box);
+            nextPage = { ...page, textBlocks: [...(page.textBlocks || []), pasted] };
+            nextSelection = { pageId: page.id, kind: "text", elementId: pasted.id };
+          } else if (clip.kind === "placement") {
+            const source = cloneData(clip.payload);
+            if (!source) return prev;
+            const fallbackCaptionY = (Number(source.y) || 0) + (Number(source.h) || 0) + getPlacementCaptionGapMm(source, 8);
+            const moved = {
+              ...source,
+              id: uid("plc"),
+              x: (Number(source.x) || 0) + offset,
+              y: (Number(source.y) || 0) + offset,
+              captionX:
+                (Number.isFinite(Number(source.captionX)) ? Number(source.captionX) : Number(source.x) || 0) + offset,
+              captionY:
+                (Number.isFinite(Number(source.captionY)) ? Number(source.captionY) : fallbackCaptionY) + offset,
+            };
+            const pasted = normalizePlacementToBounds(moved, box);
+            pasted.zIndex = nextPlacementLayerZ(page);
+            nextPage = { ...page, placements: [...(page.placements || []), pasted] };
+            nextSelection = { pageId: page.id, kind: "placement", elementId: pasted.id };
+          }
+
+          if (!nextSelection) return prev;
+          const patchSinglePage = (candidate) => (candidate?.id === page.id ? nextPage : candidate);
+          return {
+            ...prev,
+            pages: (prev.pages || []).map(patchSinglePage),
+            specialPages: {
+              insideFront: patchSinglePage(prev.specialPages?.insideFront),
+              insideBack: patchSinglePage(prev.specialPages?.insideBack),
+            },
+            selectedElement: nextSelection,
+            activePageId: page.id,
+          };
+        });
+      }
+    }
+
+    window.addEventListener("keydown", onGlobalKeyDown);
+    return () => window.removeEventListener("keydown", onGlobalKeyDown);
+  }, [activeEditablePage, state]);
 
   function exportCatalogJson() {
     const baseName = slugifyFileBaseName(effectiveProjectName, "catalogo-opere");
@@ -3938,22 +4229,8 @@ export default function App() {
       <section className="print-catalog" aria-hidden="true">
         {renderPages.map((page, idx) => {
           if (!page) return null;
-          const m = page.margins || { top: 0, right: 0, bottom: 0, left: 0 };
-          const fallbackInner = getPageContentBounds(page, state.pageFormat);
-          const measuredPage = pageMetrics?.[page.id];
-          const canonicalMeasuredPage = Object.values(pageMetrics || {}).find((pm) => pm?.pageWidth && pm?.pageHeight);
-          const measuredInner = measuredPage || Object.values(pageMetrics || {}).find((pm) => pm?.width && pm?.height) || fallbackInner;
-          const sourceW = Math.max(
-            1,
-            Math.round(measuredPage?.pageWidth || canonicalMeasuredPage?.pageWidth || ((measuredInner?.width || 0) + (m.left || 0) + (m.right || 0))),
-          );
-          const sourceH = Math.max(
-            1,
-            Math.round(measuredPage?.pageHeight || canonicalMeasuredPage?.pageHeight || ((measuredInner?.height || 0) + (m.top || 0) + (m.bottom || 0))),
-          );
-          const targetWpx = mmToCssPx(currentFormat.width);
-          const targetHpx = mmToCssPx(currentFormat.height);
-          const scale = Math.min(targetWpx / sourceW, targetHpx / sourceH);
+          const sourceW = Math.max(1, Math.round(mmToCssPx(currentFormat.width)));
+          const sourceH = Math.max(1, Math.round(mmToCssPx(currentFormat.height)));
           return (
             <div key={`print_page_${page.id}_${idx}`} className="print-page-sheet">
               <div
@@ -3961,8 +4238,8 @@ export default function App() {
                 style={{
                   width: `${sourceW}px`,
                   height: `${sourceH}px`,
-                  transform: `scale(${scale})`,
-                  "--print-scale": String(scale),
+                  transform: "none",
+                  "--print-scale": "1",
                 }}
               >
                 <PageCanvas
@@ -4916,6 +5193,23 @@ function Filmstrip({ works, selectedWorkId, onSelect, onEdit, onDelete, onAdd, o
 function WorkEditorModal({ draft, onCancel, onSave }) {
   const [form, setForm] = useState(draft);
   const [dropOver, setDropOver] = useState(false);
+  const [imageInfo, setImageInfo] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadInfo() {
+      if (!form?.imageUrl) {
+        setImageInfo(null);
+        return;
+      }
+      const info = await readImageInfo(form.imageUrl);
+      if (!cancelled) setImageInfo(info);
+    }
+    loadInfo();
+    return () => {
+      cancelled = true;
+    };
+  }, [form?.imageUrl]);
 
   async function onFileChange(e) {
     const file = e.target.files?.[0];
@@ -4956,6 +5250,19 @@ function WorkEditorModal({ draft, onCancel, onSave }) {
             onDrop={onImageDrop}
           >
             {form.imageUrl ? <img src={form.imageUrl} alt={form.title || "Anteprima"} /> : <div className="img-ph lg">Trascina o scegli immagine</div>}
+            {form.imageUrl && imageInfo && (
+              <div className="image-info-box">
+                <small>
+                  {imageInfo.width && imageInfo.height ? `${imageInfo.width}x${imageInfo.height}px` : "n/d"} ·
+                  {" "}
+                  {Number.isFinite(imageInfo.colorCount) ? `~${imageInfo.colorCount.toLocaleString("it-IT")} colori` : "colori n/d"} ·
+                  {" "}
+                  {formatFileSize(imageInfo.fileBytes)} ·
+                  {" "}
+                  {Number.isFinite(imageInfo.dpi) ? `${imageInfo.dpi} dpi` : "dpi n/d"}
+                </small>
+              </div>
+            )}
             <label className="small-btn">
               Trascina immagine qui o scegli file
               <input type="file" hidden accept="image/*" onChange={onFileChange} />
@@ -5195,6 +5502,35 @@ function PageCanvas({
     height: mmToPercent(h, logicalBounds.height),
   });
 
+  function resolvePlacementImageMetrics(boxW, boxH, imageScale, imageAspect) {
+    const safeW = Math.max(1, Number(boxW) || 1);
+    const safeH = Math.max(1, Number(boxH) || 1);
+    const safeScale = Math.max(1, Number(imageScale) || 1);
+    const safeAspect = Number(imageAspect);
+    let baseW = safeW;
+    let baseH = safeH;
+    if (Number.isFinite(safeAspect) && safeAspect > 0) {
+      const boxAspect = safeW / Math.max(0.0001, safeH);
+      if (safeAspect > boxAspect) {
+        baseH = safeH;
+        baseW = safeH * safeAspect;
+      } else {
+        baseW = safeW;
+        baseH = safeW / Math.max(0.0001, safeAspect);
+      }
+    }
+    const scaledW = baseW * safeScale;
+    const scaledH = baseH * safeScale;
+    return {
+      baseW,
+      baseH,
+      scaledW,
+      scaledH,
+      maxOffsetX: Math.max(0, (scaledW - safeW) / 2),
+      maxOffsetY: Math.max(0, (scaledH - safeH) / 2),
+    };
+  }
+
   function getResizeEdgeFromPointer(e, targetEl, thresholdPx = 8) {
     const rect = targetEl?.getBoundingClientRect?.();
     if (!rect) return null;
@@ -5211,9 +5547,13 @@ function PageCanvas({
     return nearest.edge;
   }
 
-  function startDrag(e, kind, elementId, coords, handle = "main", size = null) {
+  function startDrag(e, kind, elementId, coords, handle = "main", size = null, sourceEl = null) {
     e.stopPropagation();
     if (kind === "placement" && handle === "main" && (e.altKey || e.shiftKey)) {
+      const imgEl = sourceEl?.querySelector?.("img");
+      const naturalW = Number(imgEl?.naturalWidth) || 0;
+      const naturalH = Number(imgEl?.naturalHeight) || 0;
+      const imageAspect = Number(coords?.imageAspect);
       dragRef.current = {
         mode: e.altKey ? "image-pan" : "image-zoom",
         kind,
@@ -5223,6 +5563,7 @@ function PageCanvas({
         originY: e.clientY,
         start: coords,
         size,
+        imageAspect: Number.isFinite(imageAspect) && imageAspect > 0 ? imageAspect : naturalW > 0 && naturalH > 0 ? naturalW / naturalH : null,
         lifted: false,
       };
       onSelectPage();
@@ -5250,9 +5591,13 @@ function PageCanvas({
     window.addEventListener("pointerup", onPointerUp);
   }
 
-  function startResize(e, kind, elementId, size, handle = "main", anchor = { x: 0, y: 0 }, resizeEdge = "se") {
+  function startResize(e, kind, elementId, size, handle = "main", anchor = { x: 0, y: 0 }, resizeEdge = "se", sourceEl = null) {
     e.preventDefault();
     e.stopPropagation();
+    const imgEl = sourceEl?.querySelector?.("img");
+    const naturalW = Number(imgEl?.naturalWidth) || 0;
+    const naturalH = Number(imgEl?.naturalHeight) || 0;
+    const imageAspect = Number(size?.imageAspect);
     setResizeLock({ kind, elementId, handle, resizeEdge });
     dragRef.current = {
       mode: "resize",
@@ -5264,6 +5609,7 @@ function PageCanvas({
       originY: e.clientY,
       start: size,
       anchor,
+      imageAspect: Number.isFinite(imageAspect) && imageAspect > 0 ? imageAspect : naturalW > 0 && naturalH > 0 ? naturalW / naturalH : null,
       lifted: false,
     };
     onSelectPage();
@@ -5328,9 +5674,13 @@ function PageCanvas({
     const dy = Math.round((e.clientY - drag.originY) / pxPerMmY);
     if (!drag.lifted && (Math.abs(dx) > 1 || Math.abs(dy) > 1)) drag.lifted = true;
     if (drag.mode === "image-pan") {
+      const boxW = Math.max(1, Number(drag.size?.w) || 1);
+      const boxH = Math.max(1, Number(drag.size?.h) || 1);
+      const currentScale = Math.max(1, Number(drag.start?.imageScale) || 1);
+      const limits = resolvePlacementImageMetrics(boxW, boxH, currentScale, drag.imageAspect);
       onMoveElement(page.id, "placement", drag.elementId, {
-        imageOffsetX: Math.round((drag.start?.imageOffsetX ?? 0) + dx),
-        imageOffsetY: Math.round((drag.start?.imageOffsetY ?? 0) + dy),
+        imageOffsetX: clampNum((drag.start?.imageOffsetX ?? 0) + dx, -limits.maxOffsetX, limits.maxOffsetX),
+        imageOffsetY: clampNum((drag.start?.imageOffsetY ?? 0) + dy, -limits.maxOffsetY, limits.maxOffsetY),
       });
       return;
     }
@@ -5338,7 +5688,14 @@ function PageCanvas({
       const delta = (drag.originY - e.clientY) / 180;
       const baseScale = drag.start?.imageScale ?? 1;
       const nextScale = clampNum(Number((baseScale + delta).toFixed(3)), 1, 6);
-      onMoveElement(page.id, "placement", drag.elementId, { imageScale: nextScale });
+      const boxW = Math.max(1, Number(drag.size?.w) || 1);
+      const boxH = Math.max(1, Number(drag.size?.h) || 1);
+      const limits = resolvePlacementImageMetrics(boxW, boxH, nextScale, drag.imageAspect);
+      onMoveElement(page.id, "placement", drag.elementId, {
+        imageScale: nextScale,
+        imageOffsetX: clampNum(drag.start?.imageOffsetX ?? 0, -limits.maxOffsetX, limits.maxOffsetX),
+        imageOffsetY: clampNum(drag.start?.imageOffsetY ?? 0, -limits.maxOffsetY, limits.maxOffsetY),
+      });
       return;
     }
     if (drag.mode === "resize") {
@@ -5390,12 +5747,24 @@ function PageCanvas({
           captionH: Math.round(nextH),
         });
       } else {
-        onMoveElement(page.id, drag.kind, drag.elementId, {
+        const patch = {
           x: Math.round(nextX),
           y: Math.round(nextY),
           w: Math.round(nextW),
           h: Math.round(nextH),
-        });
+        };
+        if (drag.kind === "placement" && drag.handle === "main") {
+          const scale = Math.max(1, Number(drag.start?.imageScale) || 1);
+          const startMetrics = resolvePlacementImageMetrics(startW, startH, scale, drag.imageAspect);
+          const nextMetrics = resolvePlacementImageMetrics(nextW, nextH, scale, drag.imageAspect);
+          const startOffX = Number(drag.start?.imageOffsetX) || 0;
+          const startOffY = Number(drag.start?.imageOffsetY) || 0;
+          const nextOffX = startMetrics.scaledW > 0 ? (startOffX * nextMetrics.scaledW) / startMetrics.scaledW : startOffX;
+          const nextOffY = startMetrics.scaledH > 0 ? (startOffY * nextMetrics.scaledH) / startMetrics.scaledH : startOffY;
+          patch.imageOffsetX = clampNum(nextOffX, -nextMetrics.maxOffsetX, nextMetrics.maxOffsetX);
+          patch.imageOffsetY = clampNum(nextOffY, -nextMetrics.maxOffsetY, nextMetrics.maxOffsetY);
+        }
+        onMoveElement(page.id, drag.kind, drag.elementId, patch);
       }
     } else {
       const draggedW = drag.size?.w ?? 0;
@@ -5680,10 +6049,18 @@ function PageCanvas({
                           e,
                           "placement",
                           placement.id,
-                          { w: placement.w, h: placement.h },
+                          {
+                            w: placement.w,
+                            h: placement.h,
+                            imageOffsetX: placement.imageOffsetX ?? 0,
+                            imageOffsetY: placement.imageOffsetY ?? 0,
+                            imageScale: placement.imageScale ?? 1,
+                            imageAspect: placement.imageAspect ?? null,
+                          },
                           "main",
                           { x: placement.x, y: placement.y },
                           edge,
+                          e.currentTarget,
                         );
                         return;
                       }
@@ -5697,12 +6074,14 @@ function PageCanvas({
                           imageOffsetX: placement.imageOffsetX ?? 0,
                           imageOffsetY: placement.imageOffsetY ?? 0,
                           imageScale: placement.imageScale ?? 1,
+                          imageAspect: placement.imageAspect ?? null,
                         },
                         "main",
                         {
                           w: placement.w,
                           h: placement.h,
                         },
+                        e.currentTarget,
                       );
                     }}
                     onClick={(e) => {
@@ -5724,14 +6103,13 @@ function PageCanvas({
                         draggable={false}
                         style={{
                           position: "absolute",
-                          left: "50%",
-                          top: "50%",
-                          width: `${Math.max(1, placement.imageScale ?? 1) * 100}%`,
-                          height: `${Math.max(1, placement.imageScale ?? 1) * 100}%`,
-                          objectPosition: `calc(50% + ${Math.round((placement.imageOffsetX ?? 0) * innerScaleX)}px) calc(50% + ${Math.round(
+                          inset: 0,
+                          width: "100%",
+                          height: "100%",
+                          objectPosition: "center center",
+                          transform: `translate(${Math.round((placement.imageOffsetX ?? 0) * innerScaleX)}px, ${Math.round(
                             (placement.imageOffsetY ?? 0) * innerScaleY,
-                          )}px)`,
-                          transform: "translate(-50%, -50%)",
+                          )}px) scale(${Math.max(1, placement.imageScale ?? 1)})`,
                           transformOrigin: "center center",
                         }}
                       />
@@ -5765,10 +6143,18 @@ function PageCanvas({
                             e,
                             "placement",
                             placement.id,
-                            { w: placement.w, h: placement.h },
+                            {
+                              w: placement.w,
+                              h: placement.h,
+                              imageOffsetX: placement.imageOffsetX ?? 0,
+                              imageOffsetY: placement.imageOffsetY ?? 0,
+                              imageScale: placement.imageScale ?? 1,
+                              imageAspect: placement.imageAspect ?? null,
+                            },
                             "main",
                             { x: placement.x, y: placement.y },
                             edge,
+                            e.currentTarget?.parentElement || null,
                           )
                         }
                       />

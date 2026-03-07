@@ -1727,6 +1727,20 @@ textarea {
   background: #fff;
 }
 
+.image-info-box {
+  padding: 6px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  background: rgba(248, 246, 242, 0.9);
+}
+
+.image-info-box small {
+  display: block;
+  color: #4f473c;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .work-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
