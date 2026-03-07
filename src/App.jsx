@@ -555,8 +555,10 @@ function createDefaultState(themeSeed = null) {
     autoShowCaptionDefault: true,
     defaultPageBgColor: "#ffffff",
     defaultCoverBgColor: "#ffffff",
-    defaultElementBorderPct: 3,
-    defaultElementBorderColor: "#ffffff",
+    defaultImageBorderPct: 3,
+    defaultImageBorderColor: "#ffffff",
+    defaultTextBorderPct: 3,
+    defaultTextBorderColor: "#ffffff",
     defaultPageNumberColor: "#6b614f",
     defaultTextBgColor: "rgba(255, 255, 255, 0.42)",
     defaultPrefaceBodyMd: DEFAULT_PREFACE_BODY_MD,
@@ -580,7 +582,7 @@ function createDefaultState(themeSeed = null) {
         fontWeight: 700,
         align: "center",
         color: "#121212",
-        borderWidthPct: theme.defaultElementBorderPct ?? 3,
+        borderWidthPct: theme.defaultTextBorderPct ?? theme.defaultElementBorderPct ?? 3,
       },
       coverArea.width,
       Math.max(40, Math.round(coverArea.height * 0.16)),
@@ -593,7 +595,7 @@ function createDefaultState(themeSeed = null) {
         fontWeight: 500,
         align: "center",
         color: "#555555",
-        borderWidthPct: theme.defaultElementBorderPct ?? 3,
+        borderWidthPct: theme.defaultTextBorderPct ?? theme.defaultElementBorderPct ?? 3,
       },
       coverArea.width,
       titleBlock.y + titleBlock.h + Math.max(16, Math.round(coverArea.height * 0.06)),
@@ -614,7 +616,7 @@ function createDefaultState(themeSeed = null) {
           fontSize: theme.bodyFontSize,
           fontWeight: 400,
           align: "left",
-          borderWidthPct: theme.defaultElementBorderPct ?? 3,
+          borderWidthPct: theme.defaultTextBorderPct ?? theme.defaultElementBorderPct ?? 3,
         },
         innerArea.width,
         Math.max(20, Math.round(innerArea.height * 0.05)),
@@ -634,7 +636,7 @@ function createDefaultState(themeSeed = null) {
         fontSize: theme.bodyFontSize,
         fontWeight: 400,
         align: "left",
-        borderWidthPct: theme.defaultElementBorderPct ?? 3,
+        borderWidthPct: theme.defaultTextBorderPct ?? theme.defaultElementBorderPct ?? 3,
       },
       worksArea.width,
       Math.max(20, Math.round(worksArea.height * 0.05)),
@@ -654,7 +656,7 @@ function createDefaultState(themeSeed = null) {
         fontSize: theme.bodyFontSize,
         fontWeight: 400,
         align: "left",
-        borderWidthPct: theme.defaultElementBorderPct ?? 3,
+        borderWidthPct: theme.defaultTextBorderPct ?? theme.defaultElementBorderPct ?? 3,
       },
       thanksArea.width,
       Math.max(20, Math.round(thanksArea.height * 0.05)),
@@ -673,7 +675,7 @@ function createDefaultState(themeSeed = null) {
         fontSize: theme.bodyFontSize,
         fontWeight: 400,
         align: "left",
-        borderWidthPct: theme.defaultElementBorderPct ?? 3,
+        borderWidthPct: theme.defaultTextBorderPct ?? theme.defaultElementBorderPct ?? 3,
       },
       creditsArea.width,
       Math.max(20, Math.round(creditsArea.height * 0.05)),
@@ -694,7 +696,7 @@ function createDefaultState(themeSeed = null) {
         fontSize: 12,
         fontWeight: 400,
         align: "left",
-        borderWidthPct: theme.defaultElementBorderPct ?? 3,
+        borderWidthPct: theme.defaultTextBorderPct ?? theme.defaultElementBorderPct ?? 3,
       },
       backArea.width,
       topPad,
@@ -1351,10 +1353,12 @@ function snapValueToGrid(value, enabled, gridSize) {
 
 function applyThemeDefaultsToPlacement(placement, theme) {
   if (!placement) return placement;
-  const borderPctDefault = theme?.defaultElementBorderPct;
+  const borderPctDefault = theme?.defaultImageBorderPct ?? theme?.defaultElementBorderPct;
   const showCaptionDefault = theme?.autoShowCaptionDefault;
-  const borderColorDefault = theme?.defaultElementBorderColor || theme?.accentColor;
-  const captionBorderColorDefault = theme?.defaultCaptionBorderColor || theme?.accentColor || borderColorDefault;
+  const borderColorDefault = theme?.defaultImageBorderColor || theme?.defaultElementBorderColor || theme?.accentColor;
+  const textBorderPctDefault = theme?.defaultTextBorderPct ?? theme?.defaultElementBorderPct;
+  const textBorderColorDefault = theme?.defaultTextBorderColor || theme?.defaultElementBorderColor || theme?.accentColor;
+  const captionBorderColorDefault = theme?.defaultCaptionBorderColor || textBorderColorDefault || borderColorDefault;
   const textBgDefault = theme?.defaultTextBgColor || "rgba(255, 255, 255, 0.42)";
   const captionFontSizeDefault = theme?.captionFontSize;
   const captionGapDefault = getThemeCaptionGapMm(theme, 8);
@@ -1373,15 +1377,15 @@ function applyThemeDefaultsToPlacement(placement, theme) {
     captionColor: placement.captionColor || theme?.textColor || "#1f1f1f",
     captionBgColor: placement.captionBgColor || textBgDefault,
     captionAlign: placement.captionAlign || "center",
-    captionBorderWidthPct: Number.isFinite(Number(borderPctDefault)) ? Number(borderPctDefault) : placement.captionBorderWidthPct,
+    captionBorderWidthPct: Number.isFinite(Number(textBorderPctDefault)) ? Number(textBorderPctDefault) : placement.captionBorderWidthPct,
     captionBorderColor: captionBorderColorDefault || placement.captionBorderColor,
   };
 }
 
 function applyThemeDefaultsToTextBlock(textBlock, theme) {
   if (!textBlock) return textBlock;
-  const borderPctDefault = theme?.defaultElementBorderPct;
-  const borderColorDefault = theme?.defaultElementBorderColor || theme?.accentColor;
+  const borderPctDefault = theme?.defaultTextBorderPct ?? theme?.defaultElementBorderPct;
+  const borderColorDefault = theme?.defaultTextBorderColor || theme?.defaultElementBorderColor || theme?.accentColor;
   const textBgDefault = theme?.defaultTextBgColor || "rgba(255, 255, 255, 0.42)";
   const bodyFontSizeDefault = theme?.bodyFontSize;
   const fontWeightDefault = theme?.fontWeight;
@@ -1402,9 +1406,11 @@ function applyThemeAutoDefaultsToPage(page, theme) {
   const showCaptionDefault = theme?.autoShowCaptionDefault ?? true;
   const bgColorDefault = theme?.defaultPageBgColor || "#ffffff";
   const pageNumberColorDefault = theme?.defaultPageNumberColor || "#6b614f";
-  const borderPctDefault = theme?.defaultElementBorderPct ?? 3;
-  const borderColorDefault = theme?.defaultElementBorderColor || theme?.accentColor;
-  const captionBorderColorDefault = theme?.defaultCaptionBorderColor || theme?.accentColor || borderColorDefault;
+  const imageBorderPctDefault = theme?.defaultImageBorderPct ?? theme?.defaultElementBorderPct ?? 3;
+  const imageBorderColorDefault = theme?.defaultImageBorderColor || theme?.defaultElementBorderColor || theme?.accentColor;
+  const textBorderPctDefault = theme?.defaultTextBorderPct ?? theme?.defaultElementBorderPct ?? 3;
+  const textBorderColorDefault = theme?.defaultTextBorderColor || theme?.defaultElementBorderColor || theme?.accentColor;
+  const captionBorderColorDefault = theme?.defaultCaptionBorderColor || textBorderColorDefault || imageBorderColorDefault;
   const textBgDefault = theme?.defaultTextBgColor || "rgba(255, 255, 255, 0.42)";
   const captionFontSizeDefault = theme?.captionFontSize;
   const captionGapDefault = getThemeCaptionGapMm(theme, 8);
@@ -1416,8 +1422,8 @@ function applyThemeAutoDefaultsToPage(page, theme) {
       ...p,
       showCaption: showCaptionDefault,
       captionGapMm: captionGapDefault,
-      borderWidthPct: borderPctDefault,
-      borderColor: borderColorDefault || p.borderColor,
+      borderWidthPct: imageBorderPctDefault,
+      borderColor: imageBorderColorDefault || p.borderColor,
       captionFontSize: Number.isFinite(Number(captionFontSizeDefault))
         ? Number(captionFontSizeDefault)
         : Number.isFinite(Number(p.captionFontSize))
@@ -1427,7 +1433,7 @@ function applyThemeAutoDefaultsToPage(page, theme) {
       captionColor: p.captionColor || theme?.textColor || "#1f1f1f",
       captionBgColor: p.captionBgColor || textBgDefault,
       captionAlign: p.captionAlign || "center",
-      captionBorderWidthPct: borderPctDefault,
+      captionBorderWidthPct: textBorderPctDefault,
       captionBorderColor: captionBorderColorDefault || p.captionBorderColor,
     })),
     textBlocks: (page.textBlocks || []).map((t) => applyThemeDefaultsToTextBlock(t, theme)),
@@ -2316,8 +2322,18 @@ export default function App() {
       const nextTheme = { ...prev.theme, ...patch };
       const hasBgPatch = Object.prototype.hasOwnProperty.call(patch, "defaultPageBgColor");
       const hasCoverBgPatch = Object.prototype.hasOwnProperty.call(patch, "defaultCoverBgColor");
-      const hasBorderPatch = Object.prototype.hasOwnProperty.call(patch, "defaultElementBorderPct");
-      const hasBorderColorPatch = Object.prototype.hasOwnProperty.call(patch, "defaultElementBorderColor");
+      const hasImageBorderPatch =
+        Object.prototype.hasOwnProperty.call(patch, "defaultImageBorderPct") ||
+        Object.prototype.hasOwnProperty.call(patch, "defaultElementBorderPct");
+      const hasImageBorderColorPatch =
+        Object.prototype.hasOwnProperty.call(patch, "defaultImageBorderColor") ||
+        Object.prototype.hasOwnProperty.call(patch, "defaultElementBorderColor");
+      const hasTextBorderPatch =
+        Object.prototype.hasOwnProperty.call(patch, "defaultTextBorderPct") ||
+        Object.prototype.hasOwnProperty.call(patch, "defaultElementBorderPct");
+      const hasTextBorderColorPatch =
+        Object.prototype.hasOwnProperty.call(patch, "defaultTextBorderColor") ||
+        Object.prototype.hasOwnProperty.call(patch, "defaultElementBorderColor");
       const hasPageNumberColorPatch = Object.prototype.hasOwnProperty.call(patch, "defaultPageNumberColor");
       const hasTextBgPatch = Object.prototype.hasOwnProperty.call(patch, "defaultTextBgColor");
       const hasTextColorPatch = Object.prototype.hasOwnProperty.call(patch, "textColor");
@@ -2326,8 +2342,10 @@ export default function App() {
       if (
         !hasBgPatch &&
         !hasCoverBgPatch &&
-        !hasBorderPatch &&
-        !hasBorderColorPatch &&
+        !hasImageBorderPatch &&
+        !hasImageBorderColorPatch &&
+        !hasTextBorderPatch &&
+        !hasTextBorderColorPatch &&
         !hasPageNumberColorPatch &&
         !hasTextBgPatch &&
         !hasCaptionFontSizePatch &&
@@ -2338,10 +2356,20 @@ export default function App() {
       }
       const nextBg = patch.defaultPageBgColor || prev.theme?.defaultPageBgColor || "#ffffff";
       const nextCoverBg = patch.defaultCoverBgColor || prev.theme?.defaultCoverBgColor || "#ffffff";
-      const nextBorderPct = Number.isFinite(Number(patch.defaultElementBorderPct))
-        ? Number(patch.defaultElementBorderPct)
-        : prev.theme?.defaultElementBorderPct ?? 3;
-      const nextBorderColor = patch.defaultElementBorderColor || prev.theme?.defaultElementBorderColor || "#ffffff";
+      const nextImageBorderPct = Number.isFinite(Number(patch.defaultImageBorderPct))
+        ? Number(patch.defaultImageBorderPct)
+        : Number.isFinite(Number(patch.defaultElementBorderPct))
+          ? Number(patch.defaultElementBorderPct)
+          : prev.theme?.defaultImageBorderPct ?? prev.theme?.defaultElementBorderPct ?? 3;
+      const nextImageBorderColor =
+        patch.defaultImageBorderColor || patch.defaultElementBorderColor || prev.theme?.defaultImageBorderColor || prev.theme?.defaultElementBorderColor || "#ffffff";
+      const nextTextBorderPct = Number.isFinite(Number(patch.defaultTextBorderPct))
+        ? Number(patch.defaultTextBorderPct)
+        : Number.isFinite(Number(patch.defaultElementBorderPct))
+          ? Number(patch.defaultElementBorderPct)
+          : prev.theme?.defaultTextBorderPct ?? prev.theme?.defaultElementBorderPct ?? 3;
+      const nextTextBorderColor =
+        patch.defaultTextBorderColor || patch.defaultElementBorderColor || prev.theme?.defaultTextBorderColor || prev.theme?.defaultElementBorderColor || "#ffffff";
       const nextPageNumberColor = patch.defaultPageNumberColor || prev.theme?.defaultPageNumberColor || "#6b614f";
       const nextTextBgColor = patch.defaultTextBgColor || prev.theme?.defaultTextBgColor || "rgba(255, 255, 255, 0.42)";
       const nextTextColor = patch.textColor || prev.theme?.textColor || "#111111";
@@ -2360,18 +2388,18 @@ export default function App() {
         pageNumberColor: hasPageNumberColorPatch ? nextPageNumberColor : page.pageNumberColor,
         placements: (page.placements || []).map((pl) => ({
           ...pl,
-          borderWidthPct: hasBorderPatch ? nextBorderPct : pl.borderWidthPct,
-          borderColor: hasBorderColorPatch ? nextBorderColor : pl.borderColor,
+          borderWidthPct: hasImageBorderPatch ? nextImageBorderPct : pl.borderWidthPct,
+          borderColor: hasImageBorderColorPatch ? nextImageBorderColor : pl.borderColor,
           captionFontSize: hasCaptionFontSizePatch ? nextCaptionFontSize : pl.captionFontSize,
           captionGapMm: hasCaptionGapPatch ? nextCaptionGap : pl.captionGapMm,
           captionColor: hasTextColorPatch ? nextTextColor : pl.captionColor,
-          captionBorderWidthPct: hasBorderPatch ? nextBorderPct : pl.captionBorderWidthPct,
-          captionBorderColor: hasBorderColorPatch ? nextBorderColor : pl.captionBorderColor,
+          captionBorderWidthPct: hasTextBorderPatch ? nextTextBorderPct : pl.captionBorderWidthPct,
+          captionBorderColor: hasTextBorderColorPatch ? nextTextBorderColor : pl.captionBorderColor,
         })),
         textBlocks: (page.textBlocks || []).map((tx) => ({
           ...tx,
-          borderWidthPct: hasBorderPatch ? nextBorderPct : tx.borderWidthPct,
-          borderColor: hasBorderColorPatch ? nextBorderColor : tx.borderColor,
+          borderWidthPct: hasTextBorderPatch ? nextTextBorderPct : tx.borderWidthPct,
+          borderColor: hasTextBorderColorPatch ? nextTextBorderColor : tx.borderColor,
           bgColor: hasTextBgPatch ? nextTextBgColor : tx.bgColor,
           color: hasTextColorPatch ? nextTextColor : tx.color,
         })),
@@ -3136,44 +3164,6 @@ export default function App() {
 
   const effectiveSelectedWork = selectedPlacementWork || selectedWork;
 
-  const activePageWorks = (() => {
-    if (!activeEditablePage) return [];
-    const seen = new Set();
-    return (activeEditablePage.placements || [])
-      .map((pl) => {
-        const work = state.works.find((w) => w.id === pl.workId);
-        if (!work || seen.has(work.id)) return null;
-        seen.add(work.id);
-        return { placementId: pl.id, work };
-      })
-      .filter(Boolean);
-  })();
-
-  const activePageElements = (() => {
-    if (!activeEditablePage) return [];
-    const textItems = (activeEditablePage.textBlocks || []).map((txt, idx) => {
-      const firstLine = String(txt?.text || "").replace(/\s+/g, " ").trim();
-      const label = txt?.isRectangle ? "Rettangolo" : firstLine || `Testo ${idx + 1}`;
-      return {
-        id: txt.id,
-        kind: "text",
-        label,
-        detail: txt?.isRectangle ? "Elemento grafico" : "Blocco testo",
-      };
-    });
-    const placementItems = (activeEditablePage.placements || []).map((pl, idx) => {
-      const work = state.works.find((w) => w.id === pl.workId);
-      return {
-        id: pl.id,
-        kind: "placement",
-        label: work ? workLabel(work) : `Opera ${idx + 1}`,
-        detail: "Opera impaginata",
-        work,
-      };
-    });
-    return [...textItems, ...placementItems];
-  })();
-
   function exportCatalogJson() {
     const baseName = slugifyFileBaseName(effectiveProjectName, "catalogo-opere");
     const payload = {
@@ -3847,48 +3837,11 @@ export default function App() {
         <aside className="side-panel">
           <PanelSection title="Pagina attiva">
             {activeEditablePage ? (
-              <>
-                <PageInspector
-                  page={activeEditablePage}
-                  onChange={(patch) => patchPage(activeEditablePage.id, (p) => ({ ...p, ...patch }))}
-                  onDeletePage={() => removePage(activeEditablePage.id)}
-                />
-                <div className="stack-fields">
-                  <label>Elementi nella pagina</label>
-                  {activePageElements.length ? (
-                    <div className="page-works-list">
-                      {activePageElements.map((item) => {
-                        const isElementSelected =
-                          state.selectedElement?.kind === item.kind &&
-                          state.selectedElement?.elementId === item.id &&
-                          state.selectedElement?.pageId === activeEditablePage.id;
-                        return (
-                          <div key={`${item.kind}_${item.id}`} className="page-work-row">
-                            <button
-                              className={`page-work-select ${isElementSelected ? "active" : ""}`}
-                              onClick={() =>
-                                patchState((prev) => ({
-                                  ...prev,
-                                  selectedWorkId: item.kind === "placement" && item.work ? item.work.id : prev.selectedWorkId,
-                                  selectedElement: { pageId: activeEditablePage.id, kind: item.kind, elementId: item.id },
-                                }))
-                              }
-                              title={item.detail}
-                            >
-                              {item.label}
-                            </button>
-                            {item.kind === "placement" && item.work ? (
-                              <button className="small-btn" onClick={() => openEditWork(item.work)}>Modifica</button>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="muted">Nessun elemento in questa pagina.</p>
-                  )}
-                </div>
-              </>
+              <PageInspector
+                page={activeEditablePage}
+                onChange={(patch) => patchPage(activeEditablePage.id, (p) => ({ ...p, ...patch }))}
+                onDeletePage={() => removePage(activeEditablePage.id)}
+              />
             ) : (
               <p className="muted">Seleziona una pagina</p>
             )}
@@ -3899,6 +3852,8 @@ export default function App() {
               <ElementInspector
                 kind={state.selectedElement.kind}
                 data={selectedElementData}
+                selectedWork={state.selectedElement.kind === "placement" ? selectedPlacementWork : null}
+                onEditWork={state.selectedElement.kind === "placement" ? openEditWork : null}
                 onChange={(patch) =>
                   updateElementOnPage(state.selectedElement.pageId, state.selectedElement.kind, state.selectedElement.elementId, patch)
                 }
@@ -4445,18 +4400,33 @@ function ThemePanel({ theme, onChange, onMarginsChange, onClose }) {
             onChange={(color) => onChange({ defaultTextBgColor: color })}
           />
           <RangeField
-            label="Bordo elementi default %"
+            label="Bordo elementi immagine %"
             min={0}
             max={20}
-            value={theme.defaultElementBorderPct ?? 3}
-            onChange={(v) => onChange({ defaultElementBorderPct: v })}
+            value={theme.defaultImageBorderPct ?? theme.defaultElementBorderPct ?? 3}
+            onChange={(v) => onChange({ defaultImageBorderPct: v })}
           />
           <label>
-            Colore bordo elementi default
+            Colore bordo elementi immagine
             <input
               type="color"
-              value={theme.defaultElementBorderColor || "#ffffff"}
-              onChange={(e) => onChange({ defaultElementBorderColor: e.target.value })}
+              value={theme.defaultImageBorderColor || theme.defaultElementBorderColor || "#ffffff"}
+              onChange={(e) => onChange({ defaultImageBorderColor: e.target.value })}
+            />
+          </label>
+          <RangeField
+            label="Bordo elementi testo %"
+            min={0}
+            max={20}
+            value={theme.defaultTextBorderPct ?? theme.defaultElementBorderPct ?? 3}
+            onChange={(v) => onChange({ defaultTextBorderPct: v })}
+          />
+          <label>
+            Colore bordo elementi testo
+            <input
+              type="color"
+              value={theme.defaultTextBorderColor || theme.defaultElementBorderColor || "#ffffff"}
+              onChange={(e) => onChange({ defaultTextBorderColor: e.target.value })}
             />
           </label>
         </div>
@@ -4573,7 +4543,7 @@ function PageInspector({ page, onChange, onDeletePage }) {
   );
 }
 
-function ElementInspector({ kind, data, onChange }) {
+function ElementInspector({ kind, data, onChange, selectedWork, onEditWork }) {
   if (!data) return null;
   if (kind === "text") {
     if (data.isRectangle) {
@@ -4629,48 +4599,20 @@ function ElementInspector({ kind, data, onChange }) {
   }
   return (
     <div className="stack-fields">
-      <label>
-        Didascalia (Markdown)
-        <textarea
-          rows={4}
-          value={data.captionOverride || ""}
-          onChange={(e) => onChange({ captionOverride: e.target.value })}
-          placeholder="Se vuoto usa didascalia automatica (titolo, autore, anno)"
-        />
-      </label>
-      <RangeField
-        label="Font size"
-        min={6}
-        max={42}
-        value={data.captionFontSize || data.fontSize || 16}
-        onChange={(v) => onChange({ captionFontSize: v })}
-      />
-      <RangeField
-        label="Peso"
-        min={300}
-        max={800}
-        step={100}
-        value={data.captionFontWeight || data.fontWeight || 500}
-        onChange={(v) => onChange({ captionFontWeight: v })}
-      />
-      <label>
-        Colore
-        <input type="color" value={data.captionColor || data.color || "#1f1f1f"} onChange={(e) => onChange({ captionColor: e.target.value })} />
-      </label>
-      <ColorAlphaField
-        label="Sfondo didascalia"
-        value={data.captionBgColor || data.bgColor || "rgba(255, 255, 255, 0.42)"}
-        fallback="rgba(255, 255, 255, 0.42)"
-        onChange={(color) => onChange({ captionBgColor: color })}
-      />
-      <label>
-        Allineamento
-        <select value={data.captionAlign || data.align || "left"} onChange={(e) => onChange({ captionAlign: e.target.value })}>
-          <option value="left">Sinistra</option>
-          <option value="center">Centro</option>
-          <option value="right">Destra</option>
-        </select>
-      </label>
+      {selectedWork ? (
+        <div className="selected-work-card">
+          {selectedWork.imageUrl ? (
+            <img src={selectedWork.imageUrl} alt={workLabel(selectedWork)} />
+          ) : (
+            <div className="img-ph">Nessuna immagine</div>
+          )}
+          <div>
+            <strong>{workLabel(selectedWork)}</strong>
+            <p>{selectedWork.author || "Autore non indicato"}</p>
+            {onEditWork ? <button className="small-btn" onClick={() => onEditWork(selectedWork)}>Modifica opera</button> : null}
+          </div>
+        </div>
+      ) : null}
       <RangeField label="Bordo immagine %" min={0} max={20} value={data.borderWidthPct ?? 5} onChange={(v) => onChange({ borderWidthPct: v })} />
       <label>
         Colore bordo immagine
@@ -4680,21 +4622,67 @@ function ElementInspector({ kind, data, onChange }) {
         <input type="checkbox" checked={!!data.showCaption} onChange={(e) => onChange({ showCaption: e.target.checked })} />
         Mostra didascalia
       </label>
-      <RangeField
-        label="Bordo didascalia %"
-        min={0}
-        max={20}
-        value={data.captionBorderWidthPct ?? 5}
-        onChange={(v) => onChange({ captionBorderWidthPct: v })}
-      />
-      <label>
-        Colore bordo didascalia
-        <input
-          type="color"
-          value={data.captionBorderColor || "#ffffff"}
-          onChange={(e) => onChange({ captionBorderColor: e.target.value })}
-        />
-      </label>
+      {data.showCaption ? (
+        <>
+          <label>
+            Didascalia (Markdown)
+            <textarea
+              rows={4}
+              value={data.captionOverride || ""}
+              onChange={(e) => onChange({ captionOverride: e.target.value })}
+              placeholder="Se vuoto usa didascalia automatica (titolo, autore, anno)"
+            />
+          </label>
+          <RangeField
+            label="Font size"
+            min={6}
+            max={42}
+            value={data.captionFontSize || data.fontSize || 16}
+            onChange={(v) => onChange({ captionFontSize: v })}
+          />
+          <RangeField
+            label="Peso"
+            min={300}
+            max={800}
+            step={100}
+            value={data.captionFontWeight || data.fontWeight || 500}
+            onChange={(v) => onChange({ captionFontWeight: v })}
+          />
+          <label>
+            Colore
+            <input type="color" value={data.captionColor || data.color || "#1f1f1f"} onChange={(e) => onChange({ captionColor: e.target.value })} />
+          </label>
+          <ColorAlphaField
+            label="Sfondo didascalia"
+            value={data.captionBgColor || data.bgColor || "rgba(255, 255, 255, 0.42)"}
+            fallback="rgba(255, 255, 255, 0.42)"
+            onChange={(color) => onChange({ captionBgColor: color })}
+          />
+          <label>
+            Allineamento
+            <select value={data.captionAlign || data.align || "left"} onChange={(e) => onChange({ captionAlign: e.target.value })}>
+              <option value="left">Sinistra</option>
+              <option value="center">Centro</option>
+              <option value="right">Destra</option>
+            </select>
+          </label>
+          <RangeField
+            label="Bordo didascalia %"
+            min={0}
+            max={20}
+            value={data.captionBorderWidthPct ?? 5}
+            onChange={(v) => onChange({ captionBorderWidthPct: v })}
+          />
+          <label>
+            Colore bordo didascalia
+            <input
+              type="color"
+              value={data.captionBorderColor || "#ffffff"}
+              onChange={(e) => onChange({ captionBorderColor: e.target.value })}
+            />
+          </label>
+        </>
+      ) : null}
     </div>
   );
 }
