@@ -467,6 +467,16 @@ function getDefaultBackCoverMd(themeLike) {
   return [summary, bio].filter(Boolean).join("\n\n") || DEFAULT_BACK_COVER_MD;
 }
 
+function getThemeCaptionGapMm(themeLike, fallback = 8) {
+  const parsed = Number(themeLike?.captionGapMm);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback;
+}
+
+function getPlacementCaptionGapMm(placement, fallback = 8) {
+  const parsed = Number(placement?.captionGapMm);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback;
+}
+
 function createInsideBackCoverPage(marginsOverride, themeCfg = null) {
   const page = createPage("inside-back-cover", "Terza di copertina", marginsOverride);
   page.showPageNumber = false;
@@ -535,6 +545,7 @@ function createDefaultState(themeSeed = null) {
     fontFamily: DEFAULT_THEME_FONT,
     bodyFontSize: 15,
     captionFontSize: 15,
+    captionGapMm: 8,
     titleFontSize: 26,
     fontWeight: 400,
     textColor: "#111111",
@@ -1021,10 +1032,11 @@ function compactPageElementsToFitBounds(page, pageFormatId, boundMode = "margins
     entries.push({ x: t.x, y: t.y, w: t.w, h: t.h, kind: "text", id: t.id });
   });
   (page.placements || []).forEach((p) => {
+    const captionGap = getPlacementCaptionGapMm(p, 8);
     entries.push({ x: p.x, y: p.y, w: p.w, h: p.h, kind: "placement", id: p.id, part: "main" });
     entries.push({
       x: p.captionX ?? p.x ?? 0,
-      y: p.captionY ?? ((p.y ?? 0) + (p.h ?? 0) + 8),
+      y: p.captionY ?? ((p.y ?? 0) + (p.h ?? 0) + captionGap),
       w: p.captionW ?? 220,
       h: p.captionH ?? 52,
       kind: "placement",
@@ -1063,7 +1075,7 @@ function compactPageElementsToFitBounds(page, pageFormatId, boundMode = "margins
       w: scaleW(Number(p.w) || 0, 40),
       h: scaleW(Number(p.h) || 0, 40),
       captionX: Math.round(scaleX(p.captionX ?? p.x ?? 0)),
-      captionY: Math.round(scaleY(p.captionY ?? ((p.y ?? 0) + (p.h ?? 0) + 8))),
+      captionY: Math.round(scaleY(p.captionY ?? ((p.y ?? 0) + (p.h ?? 0) + getPlacementCaptionGapMm(p, 8)))),
       captionW: scaleW(Number(p.captionW) || 0, 5),
       captionH: scaleW(Number(p.captionH) || 0, 5),
       captionFontSize: Math.max(10, Math.round((Number(p.captionFontSize) || 16) * scale)),
@@ -1207,8 +1219,9 @@ function createPlacementForWork(workId, x = 42, y = 42) {
     imageOffsetY: 0,
     imageScale: 1,
     showCaption: true,
+    captionGapMm: 8,
     captionX: x,
-    captionY: y + 196,
+    captionY: y + 198,
     captionW: 220,
     captionH: 52,
     captionFontSize: 16,
@@ -1344,11 +1357,13 @@ function applyThemeDefaultsToPlacement(placement, theme) {
   const captionBorderColorDefault = theme?.defaultCaptionBorderColor || theme?.accentColor || borderColorDefault;
   const textBgDefault = theme?.defaultTextBgColor || "rgba(255, 255, 255, 0.42)";
   const captionFontSizeDefault = theme?.captionFontSize;
+  const captionGapDefault = getThemeCaptionGapMm(theme, 8);
   return {
     ...placement,
     borderWidthPct: Number.isFinite(Number(borderPctDefault)) ? Number(borderPctDefault) : placement.borderWidthPct,
     borderColor: borderColorDefault || placement.borderColor,
     showCaption: typeof showCaptionDefault === "boolean" ? showCaptionDefault : placement.showCaption,
+    captionGapMm: captionGapDefault,
     captionFontSize: Number.isFinite(Number(captionFontSizeDefault))
       ? Number(captionFontSizeDefault)
       : Number.isFinite(Number(placement.captionFontSize))
@@ -1392,6 +1407,7 @@ function applyThemeAutoDefaultsToPage(page, theme) {
   const captionBorderColorDefault = theme?.defaultCaptionBorderColor || theme?.accentColor || borderColorDefault;
   const textBgDefault = theme?.defaultTextBgColor || "rgba(255, 255, 255, 0.42)";
   const captionFontSizeDefault = theme?.captionFontSize;
+  const captionGapDefault = getThemeCaptionGapMm(theme, 8);
   return {
     ...page,
     bgColor: bgColorDefault,
@@ -1399,6 +1415,7 @@ function applyThemeAutoDefaultsToPage(page, theme) {
     placements: (page.placements || []).map((p) => ({
       ...p,
       showCaption: showCaptionDefault,
+      captionGapMm: captionGapDefault,
       borderWidthPct: borderPctDefault,
       borderColor: borderColorDefault || p.borderColor,
       captionFontSize: Number.isFinite(Number(captionFontSizeDefault))
@@ -1513,7 +1530,7 @@ function buildPlacementCaptionForWork(work, slotW, aspectRatio, themeCfg) {
     showCaption: true,
     text,
     h,
-    gap: text ? 8 : 0,
+    gap: text ? getThemeCaptionGapMm(themeCfg, 8) : 0,
   };
 }
 
@@ -1545,6 +1562,7 @@ function createPlacementForSlotWork(work, slot, themeCfg, aspectRatio, zIndex = 
   placement.w = fitted.w;
   placement.h = fitted.h;
   placement.showCaption = caption.showCaption;
+  placement.captionGapMm = getThemeCaptionGapMm(themeCfg, 8);
   placement.captionOverride = caption.text;
   placement.captionX = x;
   placement.captionY = Math.round(y + fitted.h + (caption.showCaption ? caption.gap : 0));
@@ -1562,6 +1580,7 @@ function createPlacementForExactFrame(work, x, y, w, h, caption, themeCfg, zInde
   placement.w = Math.max(40, Math.round(w));
   placement.h = Math.max(40, Math.round(h));
   placement.showCaption = caption.showCaption;
+  placement.captionGapMm = getThemeCaptionGapMm(themeCfg, 8);
   placement.captionOverride = caption.text;
   placement.captionX = Math.round(x);
   placement.captionY = Math.round(y + h + (caption.showCaption ? caption.gap : 0));
@@ -1720,7 +1739,7 @@ function buildDoublePlacements(works, areaW, areaH, dimMap, themeCfg) {
     );
     const imageArea = placements.reduce((sum, placement) => sum + placement.w * placement.h, 0);
     const captionFootprint = placements.reduce(
-      (sum, placement) => sum + (placement.showCaption === false ? 0 : (placement.captionH || 0) + 8),
+      (sum, placement) => sum + (placement.showCaption === false ? 0 : (placement.captionH || 0) + getPlacementCaptionGapMm(placement, 8)),
       0,
     );
     const dominantPortrait = items.filter((item) => item.aspect < 0.95).length;
@@ -1750,7 +1769,7 @@ function buildFixedPresetPlacements(presetId, works, areaW, areaH, dimMap, theme
     if (!work) return { placements: [], valid: true, fillRatio: 0, totalHeight: 0, rowCount: 0 };
     const aspect = getWorkAspectRatio(work, dimMap);
     const placement = createPlacementForSlotWork(work, { x: 0, y: 0, w: areaW, h: areaH }, themeCfg, aspect, 100);
-    const usedHeight = placement.h + (placement.showCaption === false ? 0 : (placement.captionH || 0) + 8);
+    const usedHeight = placement.h + (placement.showCaption === false ? 0 : (placement.captionH || 0) + getPlacementCaptionGapMm(placement, 8));
     return {
       placements: [placement],
       valid: usedHeight <= areaH + 1,
@@ -1944,8 +1963,9 @@ function resolveCaptionBoundsForPlacement(p, box, x, y, w, h, { soft = false } =
   const maxCaptionX = Math.max(box.minX, box.maxXForWidth(captionW));
   const maxCaptionY = Math.max(box.minY, box.maxYForHeight(captionH));
   const preferredCaptionX = x + (w - captionW) / 2;
-  const belowY = y + h + 8;
-  const aboveY = y - captionH - 8;
+  const captionGap = getPlacementCaptionGapMm(p, 8);
+  const belowY = y + h + captionGap;
+  const aboveY = y - captionH - captionGap;
   const canFitBelow = belowY <= maxCaptionY;
   const canFitAbove = aboveY >= box.minY;
   const dockedY = canFitBelow ? belowY : canFitAbove ? aboveY : clampNum(belowY, box.minY, maxCaptionY);
@@ -2302,6 +2322,7 @@ export default function App() {
       const hasTextBgPatch = Object.prototype.hasOwnProperty.call(patch, "defaultTextBgColor");
       const hasTextColorPatch = Object.prototype.hasOwnProperty.call(patch, "textColor");
       const hasCaptionFontSizePatch = Object.prototype.hasOwnProperty.call(patch, "captionFontSize");
+      const hasCaptionGapPatch = Object.prototype.hasOwnProperty.call(patch, "captionGapMm");
       if (
         !hasBgPatch &&
         !hasCoverBgPatch &&
@@ -2310,6 +2331,7 @@ export default function App() {
         !hasPageNumberColorPatch &&
         !hasTextBgPatch &&
         !hasCaptionFontSizePatch &&
+        !hasCaptionGapPatch &&
         !hasTextColorPatch
       ) {
         return { ...prev, theme: nextTheme };
@@ -2326,6 +2348,7 @@ export default function App() {
       const nextCaptionFontSize = Number.isFinite(Number(patch.captionFontSize))
         ? Number(patch.captionFontSize)
         : Number(prev.theme?.captionFontSize) || 16;
+      const nextCaptionGap = getThemeCaptionGapMm(patch, getThemeCaptionGapMm(prev.theme, 8));
       const patchPageElementsBorders = (page) => ({
         ...page,
         bgColor:
@@ -2340,6 +2363,7 @@ export default function App() {
           borderWidthPct: hasBorderPatch ? nextBorderPct : pl.borderWidthPct,
           borderColor: hasBorderColorPatch ? nextBorderColor : pl.borderColor,
           captionFontSize: hasCaptionFontSizePatch ? nextCaptionFontSize : pl.captionFontSize,
+          captionGapMm: hasCaptionGapPatch ? nextCaptionGap : pl.captionGapMm,
           captionColor: hasTextColorPatch ? nextTextColor : pl.captionColor,
           captionBorderWidthPct: hasBorderPatch ? nextBorderPct : pl.captionBorderWidthPct,
           captionBorderColor: hasBorderColorPatch ? nextBorderColor : pl.captionBorderColor,
@@ -2690,7 +2714,7 @@ export default function App() {
     const box = getPageConstraintBox(activeEditablePage, state.pageFormat, state.layoutAssist?.boundMode || "margins");
     const imageDimensions = await readImageDimensions(selectedWork.imageUrl);
     const captionH = (state.theme?.autoShowCaptionDefault ?? true) ? 46 : 28;
-    const captionGap = 8;
+    const captionGap = getThemeCaptionGapMm(state.theme, 8);
     const maxW = Math.max(80, Math.round(box.maxWidth * 0.7));
     const maxH = Math.max(80, Math.round(box.maxHeight * 0.7) - captionH - captionGap);
     const fallbackAspect =
@@ -2873,8 +2897,9 @@ export default function App() {
     const placement = applyThemeDefaultsToPlacement(createPlacementForWork(workId, safeX, safeY), state.theme);
     placement.w = fitted.w;
     placement.h = fitted.h;
+    placement.captionGapMm = getThemeCaptionGapMm(state.theme, 8);
     placement.captionX = safeX;
-    placement.captionY = safeY + fitted.h + 8;
+    placement.captionY = safeY + fitted.h + getPlacementCaptionGapMm(placement, 8);
     placement.captionW = Math.min(Math.max(40, bounds.width - safeX), Math.max(160, fitted.w));
     placement.captionH = 46;
     patchPage(pageId, (p) => ({ ...p, placements: [...p.placements, { ...placement, zIndex: nextPlacementLayerZ(p) }] }));
@@ -2906,7 +2931,7 @@ export default function App() {
         x,
         y,
         captionX: (placement.captionX ?? placement.x ?? 0) + dx,
-        captionY: (placement.captionY ?? ((placement.y ?? 0) + (placement.h ?? 0) + 8)) + dy,
+        captionY: (placement.captionY ?? ((placement.y ?? 0) + (placement.h ?? 0) + getPlacementCaptionGapMm(placement, 8))) + dy,
       };
 
       const patchSinglePage = (page) => {
@@ -2986,7 +3011,7 @@ export default function App() {
           return { ...p, x: next, captionX: (p.captionX ?? p.x) + dx };
         }
         const dy = next - p.y;
-        return { ...p, y: next, captionY: (p.captionY ?? p.y + p.h + 8) + dy };
+        return { ...p, y: next, captionY: (p.captionY ?? p.y + p.h + getPlacementCaptionGapMm(p, 8)) + dy };
       });
       const textBlocks = prevPage.textBlocks.map((t) => {
         const next = posMap.get(`text:${t.id}`);
@@ -3026,7 +3051,7 @@ export default function App() {
           }
           if (movesMainY) {
             const dy = (patch.y ?? el.y ?? 0) - (el.y ?? 0);
-            next.captionY = (el.captionY ?? ((el.y ?? 0) + (el.h ?? 0) + 8)) + dy;
+            next.captionY = (el.captionY ?? ((el.y ?? 0) + (el.h ?? 0) + getPlacementCaptionGapMm(el, 8))) + dy;
           }
           return next;
         }),
@@ -4325,6 +4350,13 @@ function ThemePanel({ theme, onChange, onMarginsChange, onClose }) {
             value={theme.captionFontSize ?? theme.bodyFontSize ?? 16}
             onChange={(v) => onChange({ captionFontSize: v })}
           />
+          <RangeField
+            label="Gap didascalia (mm)"
+            min={0}
+            max={30}
+            value={getThemeCaptionGapMm(theme, 8)}
+            onChange={(v) => onChange({ captionGapMm: v })}
+          />
         </div>
       )}
 
@@ -5315,7 +5347,7 @@ function PageCanvas({
           elementTargetsY.push(plc.y, plc.y + plc.h / 2, plc.y + plc.h);
           if (plc.showCaption) {
             const cx = plc.captionX ?? plc.x;
-            const cy = plc.captionY ?? plc.y + plc.h + 8;
+            const cy = plc.captionY ?? plc.y + plc.h + getPlacementCaptionGapMm(plc, 8);
             const cw = plc.captionW ?? 220;
             const ch = plc.captionH ?? 70;
             elementTargetsX.push(cx, cx + cw / 2, cx + cw);
@@ -5684,7 +5716,7 @@ function PageCanvas({
                       style={{
                         ...placementStyleFromMm(
                           placement.captionX ?? placement.x,
-                          placement.captionY ?? placement.y + placement.h + 8,
+                          placement.captionY ?? placement.y + placement.h + getPlacementCaptionGapMm(placement, 8),
                           placement.captionW ?? 220,
                           placement.captionH ?? 70,
                         ),
@@ -5715,7 +5747,10 @@ function PageCanvas({
                                   placement.id,
                                   { w: placement.captionW ?? 220, h: placement.captionH ?? 70 },
                                   "caption",
-                                  { x: placement.captionX ?? placement.x, y: placement.captionY ?? placement.y + placement.h + 8 },
+                                  {
+                                    x: placement.captionX ?? placement.x,
+                                    y: placement.captionY ?? placement.y + placement.h + getPlacementCaptionGapMm(placement, 8),
+                                  },
                                   edge,
                                 );
                                 return;
@@ -5726,7 +5761,7 @@ function PageCanvas({
                                 placement.id,
                                 {
                                   x: placement.captionX ?? placement.x,
-                                  y: placement.captionY ?? placement.y + placement.h + 8,
+                                  y: placement.captionY ?? placement.y + placement.h + getPlacementCaptionGapMm(placement, 8),
                                 },
                                 "caption",
                                 { w: placement.captionW ?? 220, h: placement.captionH ?? 70 },
@@ -5780,7 +5815,10 @@ function PageCanvas({
                               placement.id,
                               { w: placement.captionW ?? 220, h: placement.captionH ?? 70 },
                               "caption",
-                              { x: placement.captionX ?? placement.x, y: placement.captionY ?? placement.y + placement.h + 8 },
+                              {
+                                x: placement.captionX ?? placement.x,
+                                y: placement.captionY ?? placement.y + placement.h + getPlacementCaptionGapMm(placement, 8),
+                              },
                               edge,
                             )
                           }
