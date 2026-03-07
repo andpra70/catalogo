@@ -8,9 +8,12 @@ const THEMES_INDEX_KEY = "catalogo-opere-themes-index-v1";
 const THEME_STORAGE_PREFIX = "catalogo-opere-theme:";
 const IMAGE_DB_NAME = "catalogo-opere-assets";
 const IMAGE_STORE_NAME = "images";
-const DEFAULT_PREFACE_TITLE_MD = "# Prefazione";
 const DEFAULT_PREFACE_BODY_MD =
-  "Questo catalogo raccoglie una selezione di opere con una sequenza pensata per accompagnare la lettura tra immagini, ritmo di pagina e apparati testuali.\n\n## Linea curatoriale\n- relazione tra *materia* e luce\n- dialogo tra archivio e presente\n- attenzione al ritmo visivo di pagina\n\n> Questo testo e un template: sostituiscilo con la prefazione definitiva.";
+  "# Prefazione\n\nQuesto catalogo raccoglie una selezione di opere con una sequenza pensata per accompagnare la lettura tra immagini, ritmo di pagina e apparati testuali.\n\n## Linea curatoriale\n- relazione tra *materia* e luce\n- dialogo tra archivio e presente\n- attenzione al ritmo visivo di pagina\n\n> Questo testo e un template: sostituiscilo con la prefazione definitiva.";
+const DEFAULT_THANKS_BODY_MD =
+  "# Ringraziamenti\n\nGrazie a tutte le persone, istituzioni e collaboratori che hanno reso possibile questo progetto editoriale.\n\n- Curatela e coordinamento\n- Sostegno organizzativo\n- Supporto tecnico e produzione\n- Famiglia e amici";
+const DEFAULT_CREDITS_MD =
+  "# Credits\n\nCuratela: Nome Curatore\nTesti: Nome Autore\nProgetto grafico: Studio / Designer\nFotografie: Autore / Archivio\nStampa: Tipografia\nAnno: 2026";
 const DEFAULT_BACK_SUMMARY_MD =
   "## Sintesi\nUna selezione di opere tra fotografia, pittura e immagini d'autore che esplora materia, luce e memoria in forma di catalogo editoriale.\n\n### Focus\n- sequenza narrativa per nuclei tematici\n- alternanza tra immagini e testi\n- attenzione al progetto grafico";
 const DEFAULT_BACK_BIO_MD =
@@ -424,26 +427,11 @@ function createFullWidthTextBlock(spec, areaWidth, y, themeTitleSize = 26) {
   };
 }
 
-function createInsideFrontCoverPage(marginsOverride, pageFormatId = DEFAULT_PAGE_FORMAT_ID, themeCfg = null) {
+function createInsideFrontCoverPage(marginsOverride, themeCfg = null) {
   const page = createPage("inside-front-cover", "Seconda di copertina", marginsOverride);
   page.showPageNumber = false;
-  page.bgColor = "#ffffff";
-  const area = getPageContentBounds(page, pageFormatId);
-  const topPad = Math.max(16, Math.round(area.height * 0.08));
-  page.textBlocks = [
-    createFullWidthTextBlock(
-      {
-        text: "Credits\nCuratela: Nome Curatore\nTesti: Nome Autore\nProgetto grafico: Studio / Designer\nFotografie: Autore / Archivio\nStampa: Tipografia\nAnno: 2026",
-        fontSize: 12,
-        fontWeight: 400,
-        align: "left",
-        borderWidthPct: themeCfg?.defaultElementBorderPct ?? 3,
-      },
-      area.width,
-      topPad,
-      themeCfg?.titleFontSize ?? 26,
-    ),
-  ];
+  page.bgColor = themeCfg?.defaultCoverBgColor || "#ffffff";
+  page.textBlocks = [];
   return page;
 }
 
@@ -455,10 +443,10 @@ function getDefaultBackCoverMd(themeLike) {
   return [summary, bio].filter(Boolean).join("\n\n") || DEFAULT_BACK_COVER_MD;
 }
 
-function createInsideBackCoverPage(marginsOverride) {
+function createInsideBackCoverPage(marginsOverride, themeCfg = null) {
   const page = createPage("inside-back-cover", "Terza di copertina", marginsOverride);
   page.showPageNumber = false;
-  page.bgColor = "#ffffff";
+  page.bgColor = themeCfg?.defaultCoverBgColor || "#ffffff";
   page.textBlocks = [];
   return page;
 }
@@ -467,25 +455,10 @@ function createPrefacePage(marginsOverride, bgColor = "#ffffff", borderPct = 3, 
   const page = createPage("page", "Prefazione", marginsOverride);
   page.systemPageKey = "preface";
   page.bgColor = bgColor;
-  const titleMd = themeCfg?.defaultPrefaceTitleMd || DEFAULT_PREFACE_TITLE_MD;
   const bodyMd = themeCfg?.defaultPrefaceBodyMd || DEFAULT_PREFACE_BODY_MD;
   const area = getPageContentBounds(page, pageFormatId);
   const topPad = Math.max(14, Math.round(area.height * 0.06));
-  const interGap = Math.max(10, Math.round(area.height * 0.035));
-  const titleFont = Math.max(18, Math.round(area.height * 0.08));
   const bodyFont = Math.max(12, Math.round(area.height * 0.048));
-  const titleBlock = createFullWidthTextBlock(
-    {
-      text: titleMd,
-      fontSize: titleFont,
-      fontWeight: 700,
-      align: "left",
-      borderWidthPct: borderPct,
-    },
-    area.width,
-    topPad,
-    themeCfg?.titleFontSize ?? 26,
-  );
   const bodyBlock = createFullWidthTextBlock(
     {
       text: bodyMd,
@@ -495,13 +468,10 @@ function createPrefacePage(marginsOverride, bgColor = "#ffffff", borderPct = 3, 
       borderWidthPct: borderPct,
     },
     area.width,
-    topPad + titleBlock.h + interGap,
+    topPad,
     themeCfg?.titleFontSize ?? 26,
   );
-  page.textBlocks = [
-    titleBlock,
-    bodyBlock,
-  ];
+  page.textBlocks = [bodyBlock];
   return page;
 }
 
@@ -548,12 +518,14 @@ function createDefaultState(themeSeed = null) {
     paperShadow: "rgba(0, 0, 0, 0.10)",
     autoShowCaptionDefault: true,
     defaultPageBgColor: "#ffffff",
+    defaultCoverBgColor: "#ffffff",
     defaultElementBorderPct: 3,
     defaultElementBorderColor: "#ffffff",
     defaultPageNumberColor: "#6b614f",
     defaultTextBgColor: "rgba(255, 255, 255, 0.42)",
-    defaultPrefaceTitleMd: DEFAULT_PREFACE_TITLE_MD,
     defaultPrefaceBodyMd: DEFAULT_PREFACE_BODY_MD,
+    defaultThanksBodyMd: DEFAULT_THANKS_BODY_MD,
+    defaultCreditsMd: DEFAULT_CREDITS_MD,
     defaultBackCoverMd: getDefaultBackCoverMd(seed),
     defaultIntroCuratorialMd: DEFAULT_INTRO_CURATORIAL_MD,
     ...seed,
@@ -562,7 +534,7 @@ function createDefaultState(themeSeed = null) {
   const projectMargins = theme.pageMargins || defaultMargins;
   const coverFront = createPage("cover-front", "Copertina", projectMargins);
   coverFront.showPageNumber = false;
-  coverFront.bgColor = "#ffffff";
+  coverFront.bgColor = theme.defaultCoverBgColor || "#ffffff";
   {
     const coverArea = getPageContentBounds(coverFront, DEFAULT_PAGE_FORMAT_ID);
     const titleBlock = createFullWidthTextBlock(
@@ -595,6 +567,7 @@ function createDefaultState(themeSeed = null) {
   }
 
   const innerPage = createPage("page", "Pagina 1", projectMargins);
+  innerPage.systemPageKey = "intro";
   innerPage.pageNumber = 1;
   {
     const innerArea = getPageContentBounds(innerPage, DEFAULT_PAGE_FORMAT_ID);
@@ -614,9 +587,68 @@ function createDefaultState(themeSeed = null) {
     ];
   }
 
+  const worksIndexPage = createPage("page", "Elenco opere", projectMargins);
+  worksIndexPage.systemPageKey = "works-index";
+  worksIndexPage.bgColor = "#ffffff";
+  {
+    const worksArea = getPageContentBounds(worksIndexPage, DEFAULT_PAGE_FORMAT_ID);
+    const worksBlock = createFullWidthTextBlock(
+      {
+        text: "# Elenco opere\n\nNessuna opera inserita nelle pagine.",
+        fontSize: theme.bodyFontSize,
+        fontWeight: 400,
+        align: "left",
+        borderWidthPct: theme.defaultElementBorderPct ?? 3,
+      },
+      worksArea.width,
+      Math.max(20, Math.round(worksArea.height * 0.05)),
+      theme.titleFontSize,
+    );
+    worksBlock.systemTextKey = "works-index";
+    worksIndexPage.textBlocks = [worksBlock];
+  }
+
+  const thanksPage = createPage("page", "Ringraziamenti", projectMargins);
+  thanksPage.bgColor = "#ffffff";
+  {
+    const thanksArea = getPageContentBounds(thanksPage, DEFAULT_PAGE_FORMAT_ID);
+    const bodyBlock = createFullWidthTextBlock(
+      {
+        text: theme.defaultThanksBodyMd || DEFAULT_THANKS_BODY_MD,
+        fontSize: theme.bodyFontSize,
+        fontWeight: 400,
+        align: "left",
+        borderWidthPct: theme.defaultElementBorderPct ?? 3,
+      },
+      thanksArea.width,
+      Math.max(20, Math.round(thanksArea.height * 0.05)),
+      theme.titleFontSize,
+    );
+    thanksPage.textBlocks = [bodyBlock];
+  }
+
+  const creditsPage = createPage("page", "Credits", projectMargins);
+  creditsPage.bgColor = "#ffffff";
+  {
+    const creditsArea = getPageContentBounds(creditsPage, DEFAULT_PAGE_FORMAT_ID);
+    const creditsBlock = createFullWidthTextBlock(
+      {
+        text: theme.defaultCreditsMd || DEFAULT_CREDITS_MD,
+        fontSize: theme.bodyFontSize,
+        fontWeight: 400,
+        align: "left",
+        borderWidthPct: theme.defaultElementBorderPct ?? 3,
+      },
+      creditsArea.width,
+      Math.max(20, Math.round(creditsArea.height * 0.05)),
+      theme.titleFontSize,
+    );
+    creditsPage.textBlocks = [creditsBlock];
+  }
+
   const coverBack = createPage("cover-back", "Retro copertina", projectMargins);
   coverBack.showPageNumber = false;
-  coverBack.bgColor = "#ffffff";
+  coverBack.bgColor = theme.defaultCoverBgColor || "#ffffff";
   {
     const backArea = getPageContentBounds(coverBack, DEFAULT_PAGE_FORMAT_ID);
     const topPad = Math.max(18, Math.round(backArea.height * 0.05));
@@ -635,20 +667,38 @@ function createDefaultState(themeSeed = null) {
     coverBack.textBlocks = [backTextBlock];
   }
 
+  const applyThemeAndBounds = (page) => {
+    if (!page) return page;
+    const themed = applyThemeAutoDefaultsToPage(
+      {
+        ...page,
+        margins: { ...(theme.pageMargins || page.margins) },
+      },
+      theme,
+    );
+    const withCoverBg = isCoverPage(themed)
+      ? { ...themed, bgColor: theme.defaultCoverBgColor || "#ffffff" }
+      : themed;
+    return normalizePageForCurrentConstraints(withCoverBg, DEFAULT_PAGE_FORMAT_ID, "margins");
+  };
+
+  const pages = [coverFront, thanksPage, creditsPage, innerPage, worksIndexPage, coverBack].map(applyThemeAndBounds);
+  const specialPages = {
+    insideFront: applyThemeAndBounds(createInsideFrontCoverPage(projectMargins, theme)),
+    insideBack: applyThemeAndBounds(createInsideBackCoverPage(projectMargins, theme)),
+  };
+
   return {
     projectTitle: "Progetto",
     works: [],
     selectedWorkId: null,
-    pages: [coverFront, innerPage, coverBack],
+    pages,
     currentSpread: 0,
-    activePageId: innerPage.id,
+    activePageId: pages.find((p) => p?.systemPageKey === "intro")?.id || pages[1]?.id || null,
     selectedElement: null,
     theme,
     pageFormat: DEFAULT_PAGE_FORMAT_ID,
-    specialPages: {
-      insideFront: createInsideFrontCoverPage(projectMargins, DEFAULT_PAGE_FORMAT_ID, theme),
-      insideBack: createInsideBackCoverPage(projectMargins),
-    },
+    specialPages,
     layoutAssist: {
       snapToGrid: true,
       showGuides: true,
@@ -821,7 +871,15 @@ function loadState() {
       },
       pages: (parsed.pages || base.pages).map((p) => ({
         ...p,
-        systemPageKey: p?.systemPageKey || (p?.type === "page" && p?.title === "Prefazione" ? "preface" : undefined),
+        systemPageKey:
+          p?.systemPageKey ||
+          (p?.type === "page" && p?.title === "Prefazione"
+            ? "preface"
+            : p?.type === "page" && ((p?.textBlocks || []).some((txt) => txt?.systemTextKey === "works-index") || p?.title === "Elenco opere")
+              ? "works-index"
+              : p?.type === "page" && p?.title === "Pagina 1"
+                ? "intro"
+                : undefined),
         margins: { ...theme.pageMargins, ...(p?.margins || {}) },
       })),
       works: (parsed.works || []).map((w) => ({ ...normalizeWorkData(w), imageUrl: "" })),
@@ -857,6 +915,49 @@ function buildWorksIndexMarkdown(works, workPageMap = new Map()) {
   return `# Elenco opere\n\n${entries.join("\n")}`;
 }
 
+function isWorksIndexPage(page) {
+  if (!page) return false;
+  if (page.systemPageKey === "works-index") return true;
+  return (page.textBlocks || []).some((txt) => txt?.systemTextKey === "works-index");
+}
+
+function getBackCoverIndex(pages = []) {
+  const idx = (pages || []).findIndex((page) => page?.type === "cover-back");
+  return idx >= 0 ? idx : Math.max(0, (pages || []).length - 1);
+}
+
+function getWorksIndexPageIndex(pages = []) {
+  return (pages || []).findIndex((page) => isWorksIndexPage(page));
+}
+
+function getIntroPageIndex(pages = []) {
+  return (pages || []).findIndex((page) => page?.systemPageKey === "intro");
+}
+
+function ensureWorksIndexBeforeBackCover(pages = []) {
+  const list = [...(pages || [])];
+  const worksIndex = getWorksIndexPageIndex(list);
+  if (worksIndex < 0) return list;
+  const [worksIndexPage] = list.splice(worksIndex, 1);
+  const backCoverIndex = getBackCoverIndex(list);
+  list.splice(backCoverIndex, 0, worksIndexPage);
+  return list;
+}
+
+function getImageInsertionIndex(pages = []) {
+  const worksIndex = getWorksIndexPageIndex(pages);
+  const backCoverIndex = getBackCoverIndex(pages);
+  const upperBound = worksIndex >= 0 ? worksIndex : backCoverIndex;
+  const introIndex = getIntroPageIndex(pages);
+  const lowerBound = introIndex >= 0 ? introIndex + 1 : 1;
+  return Math.max(Math.min(upperBound, pages.length), Math.min(lowerBound, upperBound));
+}
+
+function isCoverPage(page) {
+  const type = page?.type;
+  return type === "cover-front" || type === "inside-front-cover" || type === "inside-back-cover" || type === "cover-back";
+}
+
 function scalePageLayoutForFormat(page, fromFormatId, toFormatId, boundMode = "margins") {
   if (!page || fromFormatId === toFormatId) return page;
   const fromBox = getPageConstraintBox(page, fromFormatId, boundMode);
@@ -879,11 +980,71 @@ function scalePageLayoutForFormat(page, fromFormatId, toFormatId, boundMode = "m
     captionW: scaleSizeX(p.captionW, 40),
     captionH: scaleSizeY(p.captionH, 24),
   });
-  return {
+  const scaled = {
     ...page,
     textBlocks: repositionTextBlocksForFormatChange(page, fromFormatId, toFormatId, boundMode),
     placements: (page.placements || []).map(scalePlacement).map((placement) => normalizePlacementToBounds(placement, toBox)),
   };
+  return compactPageElementsToFitBounds(scaled, toFormatId, boundMode);
+}
+
+function compactPageElementsToFitBounds(page, pageFormatId, boundMode = "margins") {
+  if (!page || page.type === "summary") return page;
+  const box = getPageConstraintBox(page, pageFormatId, boundMode);
+  const entries = [];
+  (page.textBlocks || []).forEach((t) => {
+    entries.push({ x: t.x, y: t.y, w: t.w, h: t.h, kind: "text", id: t.id });
+  });
+  (page.placements || []).forEach((p) => {
+    entries.push({ x: p.x, y: p.y, w: p.w, h: p.h, kind: "placement", id: p.id, part: "main" });
+    entries.push({
+      x: p.captionX ?? p.x ?? 0,
+      y: p.captionY ?? ((p.y ?? 0) + (p.h ?? 0) + 8),
+      w: p.captionW ?? 220,
+      h: p.captionH ?? 52,
+      kind: "placement",
+      id: p.id,
+      part: "caption",
+    });
+  });
+  if (!entries.length) return fitPageElementsToBoundsSoft(page, pageFormatId, boundMode);
+
+  const minX = entries.reduce((m, it) => Math.min(m, Number(it.x) || 0), Number.POSITIVE_INFINITY);
+  const minY = entries.reduce((m, it) => Math.min(m, Number(it.y) || 0), Number.POSITIVE_INFINITY);
+  const maxX = entries.reduce((m, it) => Math.max(m, (Number(it.x) || 0) + (Number(it.w) || 0)), Number.NEGATIVE_INFINITY);
+  const maxY = entries.reduce((m, it) => Math.max(m, (Number(it.y) || 0) + (Number(it.h) || 0)), Number.NEGATIVE_INFINITY);
+  const usedW = Math.max(1, maxX - minX);
+  const usedH = Math.max(1, maxY - minY);
+  const scale = Math.min(1, box.maxWidth / usedW, box.maxHeight / usedH);
+  if (!Number.isFinite(scale) || scale >= 0.999) return fitPageElementsToBoundsSoft(page, pageFormatId, boundMode);
+
+  const scaleX = (x) => box.minX + ((x - minX) * scale);
+  const scaleY = (y) => box.minY + ((y - minY) * scale);
+  const scaleW = (w, min) => Math.max(min, Math.round(w * scale));
+  const compacted = {
+    ...page,
+    textBlocks: (page.textBlocks || []).map((t) => ({
+      ...t,
+      x: Math.round(scaleX(t.x ?? 0)),
+      y: Math.round(scaleY(t.y ?? 0)),
+      w: scaleW(Number(t.w) || 0, 40),
+      h: scaleW(Number(t.h) || 0, 24),
+      fontSize: Math.max(10, Math.round((Number(t.fontSize) || 16) * scale)),
+    })),
+    placements: (page.placements || []).map((p) => ({
+      ...p,
+      x: Math.round(scaleX(p.x ?? 0)),
+      y: Math.round(scaleY(p.y ?? 0)),
+      w: scaleW(Number(p.w) || 0, 40),
+      h: scaleW(Number(p.h) || 0, 40),
+      captionX: Math.round(scaleX(p.captionX ?? p.x ?? 0)),
+      captionY: Math.round(scaleY(p.captionY ?? ((p.y ?? 0) + (p.h ?? 0) + 8))),
+      captionW: scaleW(Number(p.captionW) || 0, 40),
+      captionH: scaleW(Number(p.captionH) || 0, 24),
+      captionFontSize: Math.max(10, Math.round((Number(p.captionFontSize) || 16) * scale)),
+    })),
+  };
+  return fitPageElementsToBoundsSoft(compacted, pageFormatId, boundMode);
 }
 
 function repositionTextBlocksForFormatChange(page, fromFormatId, toFormatId, boundMode = "margins") {
@@ -1171,10 +1332,24 @@ function applyThemeDefaultsToPlacement(placement, theme) {
   };
 }
 
+function applyThemeDefaultsToTextBlock(textBlock, theme) {
+  if (!textBlock) return textBlock;
+  const borderPctDefault = theme?.defaultElementBorderPct;
+  const borderColorDefault = theme?.defaultElementBorderColor || theme?.accentColor;
+  const textBgDefault = theme?.defaultTextBgColor || "rgba(255, 255, 255, 0.42)";
+  return {
+    ...textBlock,
+    borderWidthPct: Number.isFinite(Number(borderPctDefault)) ? Number(borderPctDefault) : textBlock.borderWidthPct,
+    borderColor: borderColorDefault || textBlock.borderColor,
+    bgColor: textBgDefault || textBlock.bgColor,
+  };
+}
+
 function applyThemeAutoDefaultsToPage(page, theme) {
   if (!page) return page;
   const showCaptionDefault = theme?.autoShowCaptionDefault ?? true;
   const bgColorDefault = theme?.defaultPageBgColor || "#ffffff";
+  const pageNumberColorDefault = theme?.defaultPageNumberColor || "#6b614f";
   const borderPctDefault = theme?.defaultElementBorderPct ?? 3;
   const borderColorDefault = theme?.defaultElementBorderColor || theme?.accentColor;
   const captionBorderColorDefault = theme?.defaultCaptionBorderColor || theme?.accentColor || borderColorDefault;
@@ -1182,6 +1357,7 @@ function applyThemeAutoDefaultsToPage(page, theme) {
   return {
     ...page,
     bgColor: bgColorDefault,
+    pageNumberColor: pageNumberColorDefault,
     placements: (page.placements || []).map((p) => ({
       ...p,
       showCaption: showCaptionDefault,
@@ -1195,11 +1371,7 @@ function applyThemeAutoDefaultsToPage(page, theme) {
       captionBorderWidthPct: borderPctDefault,
       captionBorderColor: captionBorderColorDefault || p.captionBorderColor,
     })),
-    textBlocks: (page.textBlocks || []).map((t) => ({
-      ...t,
-      borderWidthPct: t.borderWidthPct ?? borderPctDefault,
-      bgColor: t.bgColor ?? textBgDefault,
-    })),
+    textBlocks: (page.textBlocks || []).map((t) => applyThemeDefaultsToTextBlock(t, theme)),
   };
 }
 
@@ -1632,6 +1804,7 @@ function buildLayoutPlacementsForPreset(works, presetId, pageFormatId, margins, 
 
 function buildLayoutPageFromWorks(works, presetId, pageFormatId, margins, dimMap, themeCfg, boundsOverride = null, boundMode = "margins") {
   const page = createPage("page", works.length === 1 ? workLabel(works[0]) : "Pagina opere", margins);
+  page.autoLayoutGenerated = true;
   page.bgColor = themeCfg?.defaultPageBgColor || "#ffffff";
   page.placements = buildLayoutPlacementsForPreset(works, presetId, pageFormatId, margins, dimMap, themeCfg, boundsOverride);
   const themed = applyThemeAutoDefaultsToPage(page, themeCfg);
@@ -1680,6 +1853,7 @@ function buildCatalogLayoutPages(works, presetId, pageFormatId, margins, dimMap,
     const chunk = chooseMasonryCatalogChunk(works.slice(i), pageFormatId, margins, dimMap, themeCfg, boundsOverride);
     const chunkWorks = works.slice(i, i + chunk.count);
     const page = createPage("page", chunkWorks.length === 1 ? workLabel(chunkWorks[0]) : "Pagina opere", margins);
+    page.autoLayoutGenerated = true;
     page.bgColor = themeCfg?.defaultPageBgColor || "#ffffff";
     page.placements = chunk.placements;
     const themed = applyThemeAutoDefaultsToPage(page, themeCfg);
@@ -1827,6 +2001,7 @@ export default function App() {
   const skipNextPageFormatAdjustRef = useRef(false);
   const [workEditor, setWorkEditor] = useState({ open: false, draft: null, mode: "create" });
   const [themeOpen, setThemeOpen] = useState(false);
+  const [templateOpen, setTemplateOpen] = useState(false);
   const [dragDropActive, setDragDropActive] = useState(false);
   const [persistWarning, setPersistWarning] = useState("");
   const importJsonRef = useRef(null);
@@ -1836,6 +2011,7 @@ export default function App() {
   const [layoutPanelOpen, setLayoutPanelOpen] = useState(false);
   const [selectedLayoutPreset, setSelectedLayoutPreset] = useState("masonry");
   const topbarActionsRef = useRef(null);
+  const templatePanelRef = useRef(null);
   const [pageMetrics, setPageMetrics] = useState({});
   const [savedProjects, setSavedProjects] = useState(() => loadProjectsIndex());
   const [currentProjectId, setCurrentProjectId] = useState(null);
@@ -1856,9 +2032,12 @@ export default function App() {
 
   useEffect(() => {
     function onDocPointerDown(e) {
-      if (!topbarActionsRef.current?.contains(e.target)) {
+      const isInTopbar = topbarActionsRef.current?.contains(e.target);
+      const isInTemplatePanel = templatePanelRef.current?.contains(e.target);
+      if (!isInTopbar && !isInTemplatePanel) {
         setTopbarMenuOpen(false);
         setHelpOpen(false);
+        setTemplateOpen(false);
       }
     }
     document.addEventListener("pointerdown", onDocPointerDown);
@@ -1912,8 +2091,8 @@ export default function App() {
       return {
         ...prev,
         specialPages: {
-          insideFront: prev.specialPages?.insideFront || createInsideFrontCoverPage(margins),
-          insideBack: prev.specialPages?.insideBack || createInsideBackCoverPage(margins),
+          insideFront: prev.specialPages?.insideFront || createInsideFrontCoverPage(margins, prev.theme),
+          insideBack: prev.specialPages?.insideBack || createInsideBackCoverPage(margins, prev.theme),
         },
       };
     });
@@ -1928,8 +2107,8 @@ export default function App() {
     ...page,
     title: page.title || "Pagina",
   }));
-  const insideFrontBlank = state.specialPages?.insideFront || createInsideFrontCoverPage(state.theme.pageMargins);
-  const insideBackBlank = state.specialPages?.insideBack || createInsideBackCoverPage(state.theme.pageMargins);
+  const insideFrontBlank = state.specialPages?.insideFront || createInsideFrontCoverPage(state.theme.pageMargins, state.theme);
+  const insideBackBlank = state.specialPages?.insideBack || createInsideBackCoverPage(state.theme.pageMargins, state.theme);
   const workPageMap = buildWorkFirstPageMapForCatalog(frontCover, insideFrontBlank, innerPages);
   const worksIndexMarkdown = buildWorksIndexMarkdown(state.works, workPageMap);
   const allEditablePages = [...editablePages, ...editableSpecialPages];
@@ -1960,6 +2139,22 @@ export default function App() {
       setState((prev) => ({ ...prev, currentSpread: currentSpreadIndex }));
     }
   }, [currentSpreadIndex, state.currentSpread]);
+
+  useEffect(() => {
+    const visibleIds = currentSpread.map((page) => page?.id).filter(Boolean);
+    if (!visibleIds.length || visibleIds.includes(state.activePageId)) return;
+    setState((prev) => {
+      const spreadIndex = Math.min(prev.currentSpread, Math.max(spreads.length - 1, 0));
+      const spreadPages = spreads[spreadIndex] || [null, null];
+      const spreadIds = spreadPages.map((page) => page?.id).filter(Boolean);
+      if (!spreadIds.length || spreadIds.includes(prev.activePageId)) return prev;
+      return {
+        ...prev,
+        activePageId: spreadIds[0],
+        selectedElement: null,
+      };
+    });
+  }, [currentSpread, spreads, state.activePageId]);
 
   useEffect(() => {
     setState((prev) => {
@@ -2004,18 +2199,19 @@ export default function App() {
 
   useEffect(() => {
     const prevFormat = prevPageFormatRef.current;
-    if (!prevFormat || prevFormat === state.pageFormat) return;
     if (skipNextPageFormatAdjustRef.current) {
       skipNextPageFormatAdjustRef.current = false;
       prevPageFormatRef.current = state.pageFormat;
       return;
     }
+    if (!prevFormat || prevFormat === state.pageFormat) return;
     setState((prev) => {
       const fromFmt = prevPageFormatRef.current || prev.pageFormat;
       const toFmt = prev.pageFormat;
       const boundMode = prev.layoutAssist?.boundMode || "margins";
       const fitPageToNewFormat = (p) => {
-        return scalePageLayoutForFormat(p, fromFmt, toFmt, boundMode);
+        const scaled = scalePageLayoutForFormat(p, fromFmt, toFmt, boundMode);
+        return normalizePageForCurrentConstraints(scaled, toFmt, boundMode);
       };
       return {
         ...prev,
@@ -2041,14 +2237,16 @@ export default function App() {
     patchState((prev) => {
       const nextTheme = { ...prev.theme, ...patch };
       const hasBgPatch = Object.prototype.hasOwnProperty.call(patch, "defaultPageBgColor");
+      const hasCoverBgPatch = Object.prototype.hasOwnProperty.call(patch, "defaultCoverBgColor");
       const hasBorderPatch = Object.prototype.hasOwnProperty.call(patch, "defaultElementBorderPct");
       const hasBorderColorPatch = Object.prototype.hasOwnProperty.call(patch, "defaultElementBorderColor");
       const hasPageNumberColorPatch = Object.prototype.hasOwnProperty.call(patch, "defaultPageNumberColor");
       const hasTextBgPatch = Object.prototype.hasOwnProperty.call(patch, "defaultTextBgColor");
-      if (!hasBgPatch && !hasBorderPatch && !hasBorderColorPatch && !hasPageNumberColorPatch && !hasTextBgPatch) {
+      if (!hasBgPatch && !hasCoverBgPatch && !hasBorderPatch && !hasBorderColorPatch && !hasPageNumberColorPatch && !hasTextBgPatch) {
         return { ...prev, theme: nextTheme };
       }
       const nextBg = patch.defaultPageBgColor || prev.theme?.defaultPageBgColor || "#ffffff";
+      const nextCoverBg = patch.defaultCoverBgColor || prev.theme?.defaultCoverBgColor || "#ffffff";
       const nextBorderPct = Number.isFinite(Number(patch.defaultElementBorderPct))
         ? Number(patch.defaultElementBorderPct)
         : prev.theme?.defaultElementBorderPct ?? 3;
@@ -2057,7 +2255,12 @@ export default function App() {
       const nextTextBgColor = patch.defaultTextBgColor || prev.theme?.defaultTextBgColor || "rgba(255, 255, 255, 0.42)";
       const patchPageElementsBorders = (page) => ({
         ...page,
-        bgColor: hasBgPatch ? nextBg : page.bgColor,
+        bgColor:
+          hasCoverBgPatch && isCoverPage(page)
+            ? nextCoverBg
+            : hasBgPatch && !isCoverPage(page)
+              ? nextBg
+              : page.bgColor,
         pageNumberColor: hasPageNumberColorPatch ? nextPageNumberColor : page.pageNumberColor,
         placements: (page.placements || []).map((pl) => ({
           ...pl,
@@ -2151,21 +2354,11 @@ export default function App() {
     patchState((prev) => {
       const exists = prev.works.some((w) => w.id === incoming.id);
       const works = exists ? prev.works.map((w) => (w.id === incoming.id ? incoming : w)) : [...prev.works, incoming];
-      if (exists) {
-        return { ...prev, works, selectedWorkId: incoming.id };
-      }
-      let autoPage = createAutoWorkPage(incoming, prev.pageFormat, imageDimensions || null);
-      autoPage = applyThemeAutoDefaultsToPage(autoPage, prev.theme);
-      autoPage.margins = { ...(prev.theme?.pageMargins || autoPage.margins) };
-      const nextPages = [...prev.pages];
-      nextPages.splice(nextPages.length - 1, 0, autoPage);
       return {
         ...prev,
         works,
-        pages: nextPages,
         selectedWorkId: incoming.id,
-        activePageId: autoPage.id,
-        selectedElement: { pageId: autoPage.id, kind: "placement", elementId: autoPage.placements[0].id },
+        selectedElement: exists ? prev.selectedElement : null,
       };
     });
     setWorkEditor({ open: false, draft: null, mode: "create" });
@@ -2224,26 +2417,13 @@ export default function App() {
     if (!importedWorks.length) return;
 
     patchState((prev) => {
-      const autoPages = importedWorks.map(({ work, imageDimensions }) => {
-        let page = createAutoWorkPage(work, prev.pageFormat, imageDimensions);
-        page = applyThemeAutoDefaultsToPage(page, prev.theme);
-        page.margins = { ...(prev.theme?.pageMargins || page.margins) };
-        return page;
-      });
-      const nextPages = [...prev.pages];
-      nextPages.splice(nextPages.length - 1, 0, ...autoPages);
       const importedWorkItems = importedWorks.map((it) => it.work);
       const lastWork = importedWorkItems[importedWorkItems.length - 1];
-      const firstPage = autoPages[0];
       return {
         ...prev,
         works: [...prev.works, ...importedWorkItems],
-        pages: nextPages,
         selectedWorkId: lastWork.id,
-        activePageId: firstPage?.id || prev.activePageId,
-        selectedElement: firstPage?.placements?.[0]
-          ? { pageId: firstPage.id, kind: "placement", elementId: firstPage.placements[0].id }
-          : prev.selectedElement,
+        selectedElement: null,
       };
     });
   }
@@ -2287,48 +2467,62 @@ export default function App() {
           ? activeIndex + 1
           : backCoverIndex;
       next.splice(insertIndex, 0, newPage);
-      return { ...prev, pages: next, activePageId: newPage.id };
+      if (next.length % 2 !== 0) {
+        const paddingPage = createPage("page", "Padding", prev.theme?.pageMargins);
+        paddingPage.systemPageKey = "auto-padding";
+        paddingPage.bgColor = prev.theme?.defaultPageBgColor || "#ffffff";
+        next.splice(Math.min(insertIndex + 1, next.length - 1), 0, paddingPage);
+      }
+      const insideFront = prev.specialPages?.insideFront || null;
+      const insideBack = prev.specialPages?.insideBack || null;
+      const inner = next.slice(1, -1).map((page) => ({ ...page, title: page.title || "Pagina" }));
+      const renderPages = [next[0], insideFront, ...inner, insideBack, next[next.length - 1]];
+      const nextSpreads = prev.bookViewMode === "technical" ? buildTechnicalSpreads(renderPages) : buildBookSpreads(renderPages);
+      const spreadIdx = Math.max(0, nextSpreads.findIndex((spread) => spread.some((page) => page?.id === newPage.id)));
+      return { ...prev, pages: next, activePageId: newPage.id, currentSpread: spreadIdx };
     });
   }
 
   function removePage(pageId) {
-    patchState((prev) => {
-      const pageIndex = (prev.pages || []).findIndex((p) => p.id === pageId);
-      const pages = prev.pages || [];
-      if (pageIndex >= 0) {
-        if (pages.length <= 1) return prev;
-        const nextPages = pages.filter((p) => p.id !== pageId);
-        const nextActivePageId =
-          nextPages[Math.min(Math.max(pageIndex, 0), Math.max(nextPages.length - 1, 0))]?.id ||
-          nextPages[0]?.id ||
-          prev.specialPages?.insideFront?.id ||
-          prev.specialPages?.insideBack?.id ||
-          null;
-        return {
-          ...prev,
-          pages: nextPages,
-          activePageId: nextActivePageId,
-          selectedElement: null,
-        };
-      }
-      if (prev.specialPages?.insideFront?.id === pageId) {
-        return {
-          ...prev,
-          specialPages: { ...prev.specialPages, insideFront: null },
-          activePageId: pages[0]?.id || prev.specialPages?.insideBack?.id || null,
-          selectedElement: null,
-        };
-      }
-      if (prev.specialPages?.insideBack?.id === pageId) {
-        return {
-          ...prev,
-          specialPages: { ...prev.specialPages, insideBack: null },
-          activePageId: pages[pages.length - 1]?.id || prev.specialPages?.insideFront?.id || null,
-          selectedElement: null,
-        };
-      }
-      return prev;
-    });
+    patchState((prev) => removePageInSnapshot(prev, pageId));
+  }
+
+  function removePageInSnapshot(prev, pageId) {
+    const pageIndex = (prev.pages || []).findIndex((p) => p.id === pageId);
+    const pages = prev.pages || [];
+    if (pageIndex >= 0) {
+      if (pages.length <= 1) return prev;
+      const nextPages = pages.filter((p) => p.id !== pageId);
+      const nextActivePageId =
+        nextPages[Math.min(Math.max(pageIndex, 0), Math.max(nextPages.length - 1, 0))]?.id ||
+        nextPages[0]?.id ||
+        prev.specialPages?.insideFront?.id ||
+        prev.specialPages?.insideBack?.id ||
+        null;
+      return {
+        ...prev,
+        pages: nextPages,
+        activePageId: nextActivePageId,
+        selectedElement: null,
+      };
+    }
+    if (prev.specialPages?.insideFront?.id === pageId) {
+      return {
+        ...prev,
+        specialPages: { ...prev.specialPages, insideFront: null },
+        activePageId: pages[0]?.id || prev.specialPages?.insideBack?.id || null,
+        selectedElement: null,
+      };
+    }
+    if (prev.specialPages?.insideBack?.id === pageId) {
+      return {
+        ...prev,
+        specialPages: { ...prev.specialPages, insideBack: null },
+        activePageId: pages[pages.length - 1]?.id || prev.specialPages?.insideFront?.id || null,
+        selectedElement: null,
+      };
+    }
+    return prev;
   }
 
   const activeEditablePage = allEditablePages.find((p) => p.id === state.activePageId) || state.pages[1];
@@ -2337,13 +2531,12 @@ export default function App() {
   function addTextToActivePage() {
     if (!activeEditablePage) return;
     const bounds = getActivePageLayoutBounds(activeEditablePage);
-    const block = createTextBlock("Testo editabile");
+    const block = applyThemeDefaultsToTextBlock(createTextBlock("Testo editabile"), state.theme);
     const snapToGrid = !!state.layoutAssist?.snapToGrid;
     const gridSize = Math.max(2, state.layoutAssist?.gridSize || 2);
     const targetW = Math.max(120, Math.round(bounds.width * 0.9));
     const borderPx = borderPxFromPercent(targetW, block.borderWidthPct ?? 5, 0, Math.max(48, targetW));
     const minH = Math.ceil((block.fontSize || state.theme.bodyFontSize || 16) * 1.25 + borderPx * 2 + 8);
-    block.bgColor = state.theme?.defaultTextBgColor || block.bgColor || "rgba(255, 255, 255, 0.42)";
     block.w = Math.min(bounds.width, Math.max(120, snapValueToGrid(targetW, snapToGrid, gridSize)));
     block.h = Math.max(minH, snapValueToGrid(Math.max(block.h || 0, minH), snapToGrid, gridSize));
     block.x = Math.max(0, snapValueToGrid((bounds.width - block.w) / 2, snapToGrid, gridSize));
@@ -2352,14 +2545,29 @@ export default function App() {
     patchState((prev) => ({ ...prev, selectedElement: { pageId: activeEditablePage.id, kind: "text", elementId: block.id } }));
   }
 
+  function addRectangleToActivePage() {
+    if (!activeEditablePage) return;
+    const bounds = getActivePageLayoutBounds(activeEditablePage);
+    const block = applyThemeDefaultsToTextBlock(createTextBlock(""), state.theme);
+    block.isRectangle = true;
+    block.text = "";
+    const snapToGrid = !!state.layoutAssist?.snapToGrid;
+    const gridSize = Math.max(2, state.layoutAssist?.gridSize || 2);
+    block.w = Math.min(bounds.width, Math.max(80, snapValueToGrid(Math.round(bounds.width * 0.45), snapToGrid, gridSize)));
+    block.h = Math.min(bounds.height, Math.max(48, snapValueToGrid(Math.round(bounds.height * 0.22), snapToGrid, gridSize)));
+    block.x = Math.max(0, snapValueToGrid((bounds.width - block.w) / 2, snapToGrid, gridSize));
+    block.y = Math.max(0, snapValueToGrid((bounds.height - block.h) / 2, snapToGrid, gridSize));
+    patchPage(activeEditablePage.id, (page) => ({ ...page, textBlocks: [...page.textBlocks, block] }));
+    patchState((prev) => ({ ...prev, selectedElement: { pageId: activeEditablePage.id, kind: "text", elementId: block.id } }));
+  }
+
   function addWorksIndexToActivePage() {
     if (!activeEditablePage) return;
     const bounds = getActivePageLayoutBounds(activeEditablePage);
-    const block = createTextBlock(worksIndexMarkdown);
+    const block = applyThemeDefaultsToTextBlock(createTextBlock(worksIndexMarkdown), state.theme);
     const snapToGrid = !!state.layoutAssist?.snapToGrid;
     const gridSize = Math.max(2, state.layoutAssist?.gridSize || 2);
     block.systemTextKey = "works-index";
-    block.bgColor = state.theme?.defaultTextBgColor || block.bgColor || "rgba(255, 255, 255, 0.42)";
     block.w = Math.min(bounds.width, Math.max(120, snapValueToGrid(Math.round(bounds.width * 0.9), snapToGrid, gridSize)));
     block.h = Math.min(
       bounds.height,
@@ -2496,43 +2704,6 @@ export default function App() {
     );
     const dimMap = new Map(dimensions);
     patchState((prev) => {
-      const defaultBg = prev.theme?.defaultPageBgColor || "#ffffff";
-      const boundMode = prev.layoutAssist?.boundMode || "margins";
-      const normalizeExistingPage = (page) =>
-        page
-          ? normalizePageForCurrentConstraints(
-              {
-                ...page,
-                margins: { ...(prev.theme?.pageMargins || page.margins) },
-              },
-              prev.pageFormat,
-              boundMode,
-            )
-          : page;
-      const frontBase = prev.pages[0] || createDefaultState().pages[0];
-      const backBase = prev.pages[prev.pages.length - 1] || createDefaultState().pages.at(-1);
-      const front = normalizeExistingPage(frontBase);
-      const back = normalizeExistingPage(backBase);
-      const existingPreface = (prev.pages || []).find(
-        (page) => page?.systemPageKey === "preface" || (page?.title === "Prefazione" && page.type === "page"),
-      );
-      let prefacePage = createPrefacePage(
-        prev.theme?.pageMargins,
-        defaultBg,
-        prev.theme?.defaultElementBorderPct ?? 3,
-        prev.pageFormat,
-        prev.theme,
-      );
-      if (existingPreface) {
-        prefacePage = {
-          ...prefacePage,
-          ...existingPreface,
-          id: existingPreface.id,
-          margins: { ...(prev.theme?.pageMargins || prefacePage.margins) },
-          placements: [],
-          textBlocks: existingPreface.textBlocks || prefacePage.textBlocks,
-        };
-      }
       const autoPages = buildCatalogLayoutPages(
         prev.works,
         selectedLayoutPreset,
@@ -2543,22 +2714,24 @@ export default function App() {
         null,
         prev.layoutAssist?.boundMode || "margins",
       );
-      const normalizedPreface = existingPreface
-        ? normalizeExistingPage(prefacePage)
-        : normalizePageForCurrentConstraints(prefacePage, prev.pageFormat, boundMode);
-      const pages = [front, normalizedPreface, ...autoPages, back];
+      const evenAutoPages = [...autoPages];
+      if (evenAutoPages.length % 2 !== 0) {
+        const fillerPage = createPage("page", "Pagina opere", prev.theme?.pageMargins);
+        fillerPage.autoLayoutGenerated = true;
+        fillerPage.bgColor = prev.theme?.defaultPageBgColor || "#ffffff";
+        evenAutoPages.push(fillerPage);
+      }
+      const basePages = ensureWorksIndexBeforeBackCover(prev.pages || []).filter((page) => !page?.autoLayoutGenerated);
+      const insertIndex = getImageInsertionIndex(basePages);
+      const nextPages = [...basePages];
+      nextPages.splice(insertIndex, 0, ...evenAutoPages);
+      const firstActiveCandidate = evenAutoPages[0]?.id || null;
+
       return {
         ...prev,
-        pages,
-        specialPages: {
-          insideFront: normalizeExistingPage(prev.specialPages?.insideFront),
-          insideBack: normalizeExistingPage(prev.specialPages?.insideBack),
-        },
-        activePageId: normalizedPreface?.id || autoPages[0]?.id || front?.id || null,
-        currentSpread: 0,
-        selectedElement: normalizedPreface?.textBlocks?.[0]
-          ? { pageId: normalizedPreface.id, kind: "text", elementId: normalizedPreface.textBlocks[0].id }
-          : null,
+        pages: nextPages,
+        activePageId: firstActiveCandidate || prev.activePageId,
+        selectedElement: null,
       };
     });
   }
@@ -2710,7 +2883,15 @@ export default function App() {
       if (kind === "text") {
         return {
           ...page,
-          textBlocks: page.textBlocks.map((el) => (el.id === elementId ? { ...el, ...patch } : el)),
+          textBlocks: page.textBlocks.map((el) => {
+            if (el.id !== elementId) return el;
+            const next = { ...el, ...patch };
+            if (el.isRectangle || patch?.isRectangle) {
+              next.isRectangle = true;
+              next.text = "";
+            }
+            return next;
+          }),
         };
       }
       return {
@@ -2737,26 +2918,64 @@ export default function App() {
   function deleteSelectedElement() {
     const sel = state.selectedElement;
     if (!sel) return;
-    patchPage(sel.pageId, (page) => ({
-      ...page,
-      textBlocks: sel.kind === "text" ? page.textBlocks.filter((el) => el.id !== sel.elementId) : page.textBlocks,
-      placements: sel.kind === "placement" ? page.placements.filter((el) => el.id !== sel.elementId) : page.placements,
-    }));
-    patchState((prev) => ({ ...prev, selectedElement: null }));
+    patchState((prev) => {
+      const patchSinglePage = (page) => {
+        if (!page || page.id !== sel.pageId) return page;
+        return {
+          ...page,
+          textBlocks: sel.kind === "text" ? (page.textBlocks || []).filter((el) => el.id !== sel.elementId) : page.textBlocks,
+          placements: sel.kind === "placement" ? (page.placements || []).filter((el) => el.id !== sel.elementId) : page.placements,
+        };
+      };
+      const next = {
+        ...prev,
+        pages: (prev.pages || []).map(patchSinglePage),
+        specialPages: {
+          insideFront: patchSinglePage(prev.specialPages?.insideFront),
+          insideBack: patchSinglePage(prev.specialPages?.insideBack),
+        },
+        selectedElement: null,
+      };
+      const targetPage =
+        next.pages.find((p) => p.id === sel.pageId) ||
+        (next.specialPages?.insideFront?.id === sel.pageId ? next.specialPages.insideFront : null) ||
+        (next.specialPages?.insideBack?.id === sel.pageId ? next.specialPages.insideBack : null);
+      const elementsLeft = (targetPage?.textBlocks?.length || 0) + (targetPage?.placements?.length || 0);
+      if (targetPage && elementsLeft === 0) return removePageInSnapshot(next, sel.pageId);
+      return next;
+    });
   }
 
   function deleteElementDirect(sel) {
-    patchPage(sel.pageId, (page) => ({
-      ...page,
-      textBlocks: sel.kind === "text" ? page.textBlocks.filter((el) => el.id !== sel.elementId) : page.textBlocks,
-      placements: sel.kind === "placement" ? page.placements.filter((el) => el.id !== sel.elementId) : page.placements,
-    }));
     patchState((prev) => {
+      const patchSinglePage = (page) => {
+        if (!page || page.id !== sel.pageId) return page;
+        return {
+          ...page,
+          textBlocks: sel.kind === "text" ? (page.textBlocks || []).filter((el) => el.id !== sel.elementId) : page.textBlocks,
+          placements: sel.kind === "placement" ? (page.placements || []).filter((el) => el.id !== sel.elementId) : page.placements,
+        };
+      };
       const isSame =
         prev.selectedElement?.pageId === sel.pageId &&
         prev.selectedElement?.kind === sel.kind &&
         prev.selectedElement?.elementId === sel.elementId;
-      return isSame ? { ...prev, selectedElement: null } : prev;
+      const next = {
+        ...prev,
+        pages: (prev.pages || []).map(patchSinglePage),
+        specialPages: {
+          insideFront: patchSinglePage(prev.specialPages?.insideFront),
+          insideBack: patchSinglePage(prev.specialPages?.insideBack),
+        },
+        selectedElement: isSame ? null : prev.selectedElement,
+      };
+      const targetPage =
+        next.pages.find((p) => p.id === sel.pageId) ||
+        (next.specialPages?.insideFront?.id === sel.pageId ? next.specialPages.insideFront : null) ||
+        (next.specialPages?.insideBack?.id === sel.pageId ? next.specialPages.insideBack : null);
+      const elementsLeft = (targetPage?.textBlocks?.length || 0) + (targetPage?.placements?.length || 0);
+      if (targetPage && elementsLeft === 0) return removePageInSnapshot(next, sel.pageId);
+      return next;
     });
   }
 
@@ -2796,6 +3015,31 @@ export default function App() {
         return { placementId: pl.id, work };
       })
       .filter(Boolean);
+  })();
+
+  const activePageElements = (() => {
+    if (!activeEditablePage) return [];
+    const textItems = (activeEditablePage.textBlocks || []).map((txt, idx) => {
+      const firstLine = String(txt?.text || "").replace(/\s+/g, " ").trim();
+      const label = txt?.isRectangle ? "Rettangolo" : firstLine || `Testo ${idx + 1}`;
+      return {
+        id: txt.id,
+        kind: "text",
+        label,
+        detail: txt?.isRectangle ? "Elemento grafico" : "Blocco testo",
+      };
+    });
+    const placementItems = (activeEditablePage.placements || []).map((pl, idx) => {
+      const work = state.works.find((w) => w.id === pl.workId);
+      return {
+        id: pl.id,
+        kind: "placement",
+        label: work ? workLabel(work) : `Opera ${idx + 1}`,
+        detail: "Opera impaginata",
+        work,
+      };
+    });
+    return [...textItems, ...placementItems];
   })();
 
   function exportCatalogJson() {
@@ -3126,6 +3370,7 @@ export default function App() {
     setBookView({ zoom: 1, panX: 0, panY: 0 });
     setTopbarMenuOpen(false);
     setThemeOpen(false);
+    setTemplateOpen(false);
     setHelpOpen(false);
   }
 
@@ -3167,6 +3412,7 @@ export default function App() {
           <div ref={topbarActionsRef} className="topbar-actions">
             <IconButton icon="help" onClick={() => setHelpOpen((v) => !v)} title="Guida icone" ariaLabel="Guida icone" />
             <IconButton icon="theme" onClick={() => setThemeOpen((v) => !v)} title="Tema" ariaLabel="Tema" />
+            <IconButton icon="template" onClick={() => setTemplateOpen((v) => !v)} title="Template" ariaLabel="Template" />
             <IconButton icon="menu" onClick={() => setTopbarMenuOpen((v) => !v)} title="Menu" ariaLabel="Menu" />
             {topbarMenuOpen && (
               <div className="topbar-overflow">
@@ -3378,6 +3624,7 @@ export default function App() {
               />
             </label>
             <IconButton icon="text" onClick={addTextToActivePage} title="Aggiungi testo" ariaLabel="Aggiungi testo" />
+            <IconButton icon="rect" onClick={addRectangleToActivePage} title="Aggiungi rettangolo" ariaLabel="Aggiungi rettangolo" />
             <IconButton icon="list" onClick={addWorksIndexToActivePage} title="Aggiungi elenco opere" ariaLabel="Aggiungi elenco opere" />
             <IconButton icon="image" onClick={addSelectedWorkToActivePage} disabled={!selectedWork} title="Aggiungi opera selezionata" ariaLabel="Aggiungi opera selezionata" />
             <IconButton icon="fit" onClick={normalizeActivePageNow} title="Riporta elementi dentro vincoli" ariaLabel="Riporta dentro" />
@@ -3466,33 +3713,38 @@ export default function App() {
                   onDeletePage={() => removePage(activeEditablePage.id)}
                 />
                 <div className="stack-fields">
-                  <label>Opere nella pagina</label>
-                  {activePageWorks.length ? (
+                  <label>Elementi nella pagina</label>
+                  {activePageElements.length ? (
                     <div className="page-works-list">
-                      {activePageWorks.map(({ placementId, work }) => {
-                        const isPlacementSelected =
-                          state.selectedElement?.kind === "placement" && state.selectedElement?.elementId === placementId;
+                      {activePageElements.map((item) => {
+                        const isElementSelected =
+                          state.selectedElement?.kind === item.kind &&
+                          state.selectedElement?.elementId === item.id &&
+                          state.selectedElement?.pageId === activeEditablePage.id;
                         return (
-                          <div key={placementId} className="page-work-row">
+                          <div key={`${item.kind}_${item.id}`} className="page-work-row">
                             <button
-                              className={`page-work-select ${isPlacementSelected ? "active" : ""}`}
+                              className={`page-work-select ${isElementSelected ? "active" : ""}`}
                               onClick={() =>
                                 patchState((prev) => ({
                                   ...prev,
-                                  selectedWorkId: work.id,
-                                  selectedElement: { pageId: activeEditablePage.id, kind: "placement", elementId: placementId },
+                                  selectedWorkId: item.kind === "placement" && item.work ? item.work.id : prev.selectedWorkId,
+                                  selectedElement: { pageId: activeEditablePage.id, kind: item.kind, elementId: item.id },
                                 }))
                               }
+                              title={item.detail}
                             >
-                              {workLabel(work)}
+                              {item.label}
                             </button>
-                            <button className="small-btn" onClick={() => openEditWork(work)}>Modifica</button>
+                            {item.kind === "placement" && item.work ? (
+                              <button className="small-btn" onClick={() => openEditWork(item.work)}>Modifica</button>
+                            ) : null}
                           </div>
                         );
                       })}
                     </div>
                   ) : (
-                    <p className="muted">Nessuna opera in questa pagina.</p>
+                    <p className="muted">Nessun elemento in questa pagina.</p>
                   )}
                 </div>
               </>
@@ -3596,6 +3848,15 @@ export default function App() {
           onClose={() => setThemeOpen(false)}
           onChange={patchTheme}
           onMarginsChange={updateGlobalMargins}
+        />
+      )}
+
+      {templateOpen && (
+        <TemplatePanel
+          theme={state.theme}
+          onClose={() => setTemplateOpen(false)}
+          onChange={patchTheme}
+          panelRef={templatePanelRef}
         />
       )}
 
@@ -3749,6 +4010,8 @@ function Icon({ name }) {
     distributeBounds: <svg {...common}><path d="M4 6h16M4 18h16" /><path d="M7 9v6M12 7v10M17 9v6" /></svg>,
     spreadMode: <svg {...common}><path d="M3.5 6h8v12h-8zM12.5 6h8v12h-8z" /><path d="M12 6v12" /></svg>,
     text: <svg {...common}><path d="M5 6h14M12 6v12M8.5 18h7" /></svg>,
+    template: <svg {...common}><path d="M6 4.5h9l3 3V19.5H6z" /><path d="M15 4.5v3h3M9 11h6M9 14h6" /></svg>,
+    rect: <svg {...common}><rect x="5" y="7" width="14" height="10" rx="1.5" /></svg>,
     list: <svg {...common}><path d="M8 7h12M8 12h12M8 17h12" /><circle cx="4.5" cy="7" r="1" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="4.5" cy="17" r="1" fill="currentColor" stroke="none" /></svg>,
     image: <svg {...common}><rect x="4" y="5" width="16" height="14" rx="1.5" /><path d="m7 15 3.2-3.3 2.7 2.7 2.1-2.2L18 15" /><circle cx="9" cy="9" r="1.2" /></svg>,
     fit: <svg {...common}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>,
@@ -3778,7 +4041,7 @@ function HelpOverlay({ onClose }) {
     ["Griglia", "Snap griglia"],
     ["Guide", "Guide magnetiche"],
     ["Vincoli", "Margini / pagina intera"],
-    ["T / Elenco / Immagine", "Aggiungi testo / elenco opere / opera selezionata"],
+    ["T / Rett. / Elenco / Immagine", "Aggiungi testo / rettangolo / elenco opere / opera selezionata"],
     ["Fit", "Riporta dentro i vincoli"],
     ["Cestino", "Elimina elemento selezionato"],
   ];
@@ -3933,6 +4196,14 @@ function ThemePanel({ theme, onChange, onMarginsChange, onClose }) {
           onChange={(e) => onChange({ defaultPageBgColor: e.target.value })}
         />
       </label>
+      <label>
+        Sfondo copertina
+        <input
+          type="color"
+          value={theme.defaultCoverBgColor || "#ffffff"}
+          onChange={(e) => onChange({ defaultCoverBgColor: e.target.value })}
+        />
+      </label>
       <ColorAlphaField
         label="Sfondo rettangoli testo default"
         value={theme.defaultTextBgColor || "rgba(255, 255, 255, 0.42)"}
@@ -3970,38 +4241,6 @@ function ThemePanel({ theme, onChange, onMarginsChange, onClose }) {
           onChange={(e) => onChange({ defaultElementBorderColor: e.target.value })}
         />
       </label>
-      <label>
-        Template Introduzione/Curatoriale (MD)
-        <textarea
-          rows={12}
-          value={theme.defaultIntroCuratorialMd || DEFAULT_INTRO_CURATORIAL_MD}
-          onChange={(e) => onChange({ defaultIntroCuratorialMd: e.target.value })}
-        />
-      </label>
-      <label>
-        Template Prefazione Titolo (MD)
-        <textarea
-          rows={3}
-          value={theme.defaultPrefaceTitleMd || DEFAULT_PREFACE_TITLE_MD}
-          onChange={(e) => onChange({ defaultPrefaceTitleMd: e.target.value })}
-        />
-      </label>
-      <label>
-        Template Prefazione Testo (MD)
-        <textarea
-          rows={8}
-          value={theme.defaultPrefaceBodyMd || DEFAULT_PREFACE_BODY_MD}
-          onChange={(e) => onChange({ defaultPrefaceBodyMd: e.target.value })}
-        />
-      </label>
-      <label>
-        Template Retrocopertina (Sintesi + Biografia) (MD)
-        <textarea
-          rows={14}
-          value={theme.defaultBackCoverMd || getDefaultBackCoverMd(theme)}
-          onChange={(e) => onChange({ defaultBackCoverMd: e.target.value })}
-        />
-      </label>
       <div className="grid-2">
         <RangeField
           label="Margine top"
@@ -4036,6 +4275,92 @@ function ThemePanel({ theme, onChange, onMarginsChange, onClose }) {
   );
 }
 
+function TemplatePanel({ theme, onChange, onClose, panelRef }) {
+  const [tab, setTab] = useState("thanks");
+
+  return (
+    <div ref={panelRef} className="floating-panel template-panel">
+      <div className="floating-head">
+        <strong>Template Editoriali</strong>
+        <button onClick={onClose}>✕</button>
+      </div>
+
+      <div className="template-tabs">
+        <button className={tab === "thanks" ? "active" : ""} onClick={() => setTab("thanks")}>Ringraziamenti</button>
+        <button className={tab === "credits" ? "active" : ""} onClick={() => setTab("credits")}>Credits</button>
+        <button className={tab === "intro" ? "active" : ""} onClick={() => setTab("intro")}>Introduzione</button>
+        <button className={tab === "preface" ? "active" : ""} onClick={() => setTab("preface")}>Prefazione</button>
+        <button className={tab === "back" ? "active" : ""} onClick={() => setTab("back")}>Retrocopertina</button>
+      </div>
+
+      {tab === "intro" && (
+        <div className="stack-fields">
+          <label>
+            Introduzione/Curatoriale (MD)
+            <textarea
+              rows={14}
+              value={theme.defaultIntroCuratorialMd || DEFAULT_INTRO_CURATORIAL_MD}
+              onChange={(e) => onChange({ defaultIntroCuratorialMd: e.target.value })}
+            />
+          </label>
+        </div>
+      )}
+
+      {tab === "preface" && (
+        <div className="stack-fields">
+          <label>
+            Prefazione (MD)
+            <textarea
+              rows={14}
+              value={theme.defaultPrefaceBodyMd || DEFAULT_PREFACE_BODY_MD}
+              onChange={(e) => onChange({ defaultPrefaceBodyMd: e.target.value })}
+            />
+          </label>
+        </div>
+      )}
+
+      {tab === "thanks" && (
+        <div className="stack-fields">
+          <label>
+            Ringraziamenti (MD)
+            <textarea
+              rows={14}
+              value={theme.defaultThanksBodyMd || DEFAULT_THANKS_BODY_MD}
+              onChange={(e) => onChange({ defaultThanksBodyMd: e.target.value })}
+            />
+          </label>
+        </div>
+      )}
+
+      {tab === "credits" && (
+        <div className="stack-fields">
+          <label>
+            Credits (MD)
+            <textarea
+              rows={14}
+              value={theme.defaultCreditsMd || DEFAULT_CREDITS_MD}
+              onChange={(e) => onChange({ defaultCreditsMd: e.target.value })}
+            />
+          </label>
+        </div>
+      )}
+
+      {tab === "back" && (
+        <div className="stack-fields">
+          <label>
+            Retrocopertina (MD)
+            <textarea
+              rows={14}
+              value={theme.defaultBackCoverMd || getDefaultBackCoverMd(theme)}
+              onChange={(e) => onChange({ defaultBackCoverMd: e.target.value })}
+            />
+          </label>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PageInspector({ page, onChange, onDeletePage }) {
   return (
     <div className="stack-fields">
@@ -4061,6 +4386,23 @@ function PageInspector({ page, onChange, onDeletePage }) {
 function ElementInspector({ kind, data, onChange }) {
   if (!data) return null;
   if (kind === "text") {
+    if (data.isRectangle) {
+      return (
+        <div className="stack-fields">
+          <ColorAlphaField
+            label="Riempimento"
+            value={data.bgColor || "rgba(255, 255, 255, 0.42)"}
+            fallback="rgba(255, 255, 255, 0.42)"
+            onChange={(color) => onChange({ bgColor: color })}
+          />
+          <RangeField label="Bordo %" min={0} max={20} value={data.borderWidthPct ?? 5} onChange={(v) => onChange({ borderWidthPct: v })} />
+          <label>
+            Colore bordo
+            <input type="color" value={data.borderColor || "#ffffff"} onChange={(e) => onChange({ borderColor: e.target.value })} />
+          </label>
+        </div>
+      );
+    }
     return (
       <div className="stack-fields">
         <label>
@@ -5259,7 +5601,8 @@ function PageCanvas({
             {(page.textBlocks || []).map((txt) => {
               const isSelected =
                 selectedElement?.pageId === page.id && selectedElement?.kind === "text" && selectedElement?.elementId === txt.id;
-              const isEditing = inlineEdit?.kind === "text" && inlineEdit?.id === txt.id;
+              const isRectangle = !!txt.isRectangle;
+              const isEditing = !isRectangle && inlineEdit?.kind === "text" && inlineEdit?.id === txt.id;
               return (
                 (() => {
                   const textLockedOut =
@@ -5294,6 +5637,7 @@ function PageCanvas({
                     onSelectElement({ pageId: page.id, kind: "text", elementId: txt.id });
                   }}
                   onDoubleClick={(e) => {
+                    if (isRectangle) return;
                     e.stopPropagation();
                     startInlineTextEdit(txt);
                   }}
@@ -5310,7 +5654,7 @@ function PageCanvas({
                       ×
                     </button>
                   )}
-                  {isEditing ? (
+                  {isRectangle ? null : isEditing ? (
                     <textarea
                       className="inline-text-editor"
                       value={inlineEdit.value}

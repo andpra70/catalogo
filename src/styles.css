@@ -537,7 +537,7 @@ button:disabled {
 }
 
 .page-canvas.active {
-  outline: 2px solid color-mix(in srgb, var(--accent-color) 50%, white);
+  outline: 2px dashed #d32f2f;
   outline-offset: 2px;
 }
 
@@ -1386,6 +1386,36 @@ textarea {
   max-width: calc(100vw - 32px);
   padding: 14px;
   gap: 12px;
+}
+
+.floating-panel.template-panel {
+  top: 12vh;
+  right: 24px;
+  width: min(860px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: 76vh;
+  overflow: auto;
+  padding: 14px;
+  gap: 12px;
+}
+
+.template-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.template-tabs button {
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.template-tabs button.active {
+  border-color: #111;
+  background: color-mix(in srgb, var(--accent-color, #111) 12%, white);
 }
 
 .layout-panel .floating-head {
