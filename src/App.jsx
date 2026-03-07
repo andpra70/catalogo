@@ -1271,7 +1271,8 @@ function createAutoWorkPageFromImageAspect(work, pageFormatId, aspectRatio, boun
 }
 
 function clampNum(value, min, max) {
-  return Math.max(min, Math.min(max, Number.isFinite(value) ? value : min));
+  const parsed = Number(value);
+  return Math.max(min, Math.min(max, Number.isFinite(parsed) ? parsed : min));
 }
 
 function fitImageMmToBox(work, imageDimensions, maxW, maxH, fallbackAspect = 1) {
@@ -2259,8 +2260,18 @@ export default function App() {
       const hasBorderColorPatch = Object.prototype.hasOwnProperty.call(patch, "defaultElementBorderColor");
       const hasPageNumberColorPatch = Object.prototype.hasOwnProperty.call(patch, "defaultPageNumberColor");
       const hasTextBgPatch = Object.prototype.hasOwnProperty.call(patch, "defaultTextBgColor");
+      const hasTextColorPatch = Object.prototype.hasOwnProperty.call(patch, "textColor");
       const hasCaptionFontSizePatch = Object.prototype.hasOwnProperty.call(patch, "captionFontSize");
-      if (!hasBgPatch && !hasCoverBgPatch && !hasBorderPatch && !hasBorderColorPatch && !hasPageNumberColorPatch && !hasTextBgPatch && !hasCaptionFontSizePatch) {
+      if (
+        !hasBgPatch &&
+        !hasCoverBgPatch &&
+        !hasBorderPatch &&
+        !hasBorderColorPatch &&
+        !hasPageNumberColorPatch &&
+        !hasTextBgPatch &&
+        !hasCaptionFontSizePatch &&
+        !hasTextColorPatch
+      ) {
         return { ...prev, theme: nextTheme };
       }
       const nextBg = patch.defaultPageBgColor || prev.theme?.defaultPageBgColor || "#ffffff";
@@ -2271,6 +2282,7 @@ export default function App() {
       const nextBorderColor = patch.defaultElementBorderColor || prev.theme?.defaultElementBorderColor || "#ffffff";
       const nextPageNumberColor = patch.defaultPageNumberColor || prev.theme?.defaultPageNumberColor || "#6b614f";
       const nextTextBgColor = patch.defaultTextBgColor || prev.theme?.defaultTextBgColor || "rgba(255, 255, 255, 0.42)";
+      const nextTextColor = patch.textColor || prev.theme?.textColor || "#111111";
       const nextCaptionFontSize = Number.isFinite(Number(patch.captionFontSize))
         ? Number(patch.captionFontSize)
         : Number(prev.theme?.captionFontSize) || 16;
@@ -2288,6 +2300,7 @@ export default function App() {
           borderWidthPct: hasBorderPatch ? nextBorderPct : pl.borderWidthPct,
           borderColor: hasBorderColorPatch ? nextBorderColor : pl.borderColor,
           captionFontSize: hasCaptionFontSizePatch ? nextCaptionFontSize : pl.captionFontSize,
+          captionColor: hasTextColorPatch ? nextTextColor : pl.captionColor,
           captionBorderWidthPct: hasBorderPatch ? nextBorderPct : pl.captionBorderWidthPct,
           captionBorderColor: hasBorderColorPatch ? nextBorderColor : pl.captionBorderColor,
         })),
@@ -2296,6 +2309,7 @@ export default function App() {
           borderWidthPct: hasBorderPatch ? nextBorderPct : tx.borderWidthPct,
           borderColor: hasBorderColorPatch ? nextBorderColor : tx.borderColor,
           bgColor: hasTextBgPatch ? nextTextBgColor : tx.bgColor,
+          color: hasTextColorPatch ? nextTextColor : tx.color,
         })),
       });
       return {
