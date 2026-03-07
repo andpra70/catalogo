@@ -164,6 +164,10 @@ function mmToCssPx(mm) {
   return (Number(mm) * 96) / 25.4;
 }
 
+function cssPxToMm(px) {
+  return (Number(px) * 25.4) / 96;
+}
+
 function slugifyFileBaseName(value, fallback = "catalogo-book") {
   const raw = String(value || "").trim();
   const base = (raw || fallback)
@@ -406,6 +410,26 @@ function estimateTextBlockHeight(text, width, fontSize = 16, borderWidthPct = 3,
     Math.round(total + borderPx * 2 + 12),
     Math.round(fontSize * 1.5 + borderPx * 2 + 12),
   );
+}
+
+function estimateCaptionHeight(text, width, fontSize = 16) {
+  const safeWidth = Math.max(5, Number(width) || 5);
+  const safeWidthPx = Math.max(12, mmToCssPx(safeWidth));
+  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  const safeFont = Math.max(6, Number(fontSize) || 16);
+  const charsPerLine = Math.max(8, Math.floor(safeWidthPx / Math.max(5, safeFont * 0.56)));
+  let totalLines = 0;
+  lines.forEach((rawLine) => {
+    const plain = stripMarkdownSyntax(rawLine);
+    if (!plain.length) {
+      totalLines += 1;
+      return;
+    }
+    totalLines += Math.max(1, Math.ceil(plain.length / charsPerLine));
+  });
+  const lineHeight = safeFont * 1.2;
+  const contentHeight = Math.max(1, totalLines) * lineHeight;
+  return Math.max(5, Math.round(cssPxToMm(contentHeight + 8)));
 }
 
 function createFullWidthTextBlock(spec, areaWidth, y, themeTitleSize = 26) {
@@ -1478,13 +1502,13 @@ function buildPlacementCaptionForWork(work, slotW, aspectRatio, themeCfg) {
   const meta = [work?.author, work?.year].filter(Boolean).join(", ");
   const inline = [title, meta].filter(Boolean).join(" — ");
   if (!showCaption) {
-    return { showCaption: false, text: "", h: 28, gap: 0 };
+    return { showCaption: false, text: "", h: 5, gap: 0 };
   }
   const approxChars = Math.max(18, Math.floor(Math.max(120, slotW || 0) / 7.4));
   const preferOneLine = inline.length <= approxChars && aspectRatio >= 0.85;
   const text = preferOneLine ? inline : [title, meta].filter(Boolean).join("\n");
-  const lines = !text ? 0 : preferOneLine ? 1 : inline.length > approxChars * 1.8 ? 3 : 2;
-  const h = lines <= 1 ? 36 : lines === 2 ? 52 : 66;
+  const captionFontSize = Number(themeCfg?.captionFontSize) || Number(themeCfg?.bodyFontSize) || 16;
+  const h = Math.max(5, estimateCaptionHeight(text, Math.max(5, slotW || 0), captionFontSize));
   return {
     showCaption: true,
     text,
@@ -1501,8 +1525,19 @@ function createPlacementForSlotWork(work, slot, themeCfg, aspectRatio, zIndex = 
     h: Math.max(40, Math.round(slot?.h || 40)),
   };
   const caption = buildPlacementCaptionForWork(work, safeSlot.w, aspectRatio, themeCfg);
-  const imageBoxH = Math.max(40, safeSlot.h - (caption.showCaption ? caption.h + caption.gap : 0));
-  const fitted = fitAspectRatioToBox(aspectRatio, safeSlot.w, imageBoxH);
+  let captionH = caption.showCaption ? Math.max(5, caption.h || 5) : 5;
+  let imageBoxH = Math.max(40, safeSlot.h - (caption.showCaption ? captionH + caption.gap : 0));
+  let fitted = fitAspectRatioToBox(aspectRatio, safeSlot.w, imageBoxH);
+  if (caption.showCaption) {
+    const captionFontSize = Number(themeCfg?.captionFontSize) || Number(themeCfg?.bodyFontSize) || 16;
+    for (let i = 0; i < 2; i += 1) {
+      const nextCaptionH = Math.max(5, estimateCaptionHeight(caption.text, Math.max(5, fitted.w), captionFontSize));
+      if (Math.abs(nextCaptionH - captionH) < 1) break;
+      captionH = nextCaptionH;
+      imageBoxH = Math.max(40, safeSlot.h - (captionH + caption.gap));
+      fitted = fitAspectRatioToBox(aspectRatio, safeSlot.w, imageBoxH);
+    }
+  }
   const x = Math.round(safeSlot.x + (safeSlot.w - fitted.w) / 2);
   const y = Math.round(safeSlot.y + (imageBoxH - fitted.h) / 2);
   const placement = applyThemeDefaultsToPlacement(createPlacementForWork(work.id, x, y), themeCfg);
@@ -1511,10 +1546,10 @@ function createPlacementForSlotWork(work, slot, themeCfg, aspectRatio, zIndex = 
   placement.h = fitted.h;
   placement.showCaption = caption.showCaption;
   placement.captionOverride = caption.text;
-  placement.captionX = safeSlot.x;
-  placement.captionY = Math.round(safeSlot.y + imageBoxH + (caption.showCaption ? caption.gap : 0));
-  placement.captionW = safeSlot.w;
-  placement.captionH = caption.showCaption ? caption.h : 28;
+  placement.captionX = x;
+  placement.captionY = Math.round(y + fitted.h + (caption.showCaption ? caption.gap : 0));
+  placement.captionW = Math.max(5, Math.round(fitted.w));
+  placement.captionH = caption.showCaption ? Math.max(5, Math.round(captionH)) : 5;
   return placement;
 }
 
@@ -1530,8 +1565,13 @@ function createPlacementForExactFrame(work, x, y, w, h, caption, themeCfg, zInde
   placement.captionOverride = caption.text;
   placement.captionX = Math.round(x);
   placement.captionY = Math.round(y + h + (caption.showCaption ? caption.gap : 0));
-  placement.captionW = Math.max(40, Math.round(w));
-  placement.captionH = caption.showCaption ? caption.h : 28;
+  placement.captionW = Math.max(5, Math.round(w));
+  if (caption.showCaption) {
+    const captionFontSize = Number(themeCfg?.captionFontSize) || Number(themeCfg?.bodyFontSize) || 16;
+    placement.captionH = Math.max(5, estimateCaptionHeight(caption.text, Math.max(5, placement.captionW), captionFontSize));
+  } else {
+    placement.captionH = 5;
+  }
   return placement;
 }
 
@@ -4229,133 +4269,166 @@ function LayoutPanel({
 }
 
 function ThemePanel({ theme, onChange, onMarginsChange, onClose }) {
+  const [tab, setTab] = useState("typography");
+
   return (
     <div className="floating-panel theme-panel">
       <div className="floating-head">
         <strong>Tema catalogo</strong>
         <button onClick={onClose}>✕</button>
       </div>
-      <label>
-        Font
-        <select
-          value={theme.fontFamily}
-          onChange={(e) => onChange({ fontFamily: e.target.value })}
-          style={{ fontFamily: theme.fontFamily }}
-        >
-          {FONT_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value} style={{ fontFamily: opt.value }}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <RangeField label="Font base" min={6} max={24} value={theme.bodyFontSize} onChange={(v) => onChange({ bodyFontSize: v })} />
-      <RangeField label="Titoli" min={18} max={42} value={theme.titleFontSize} onChange={(v) => onChange({ titleFontSize: v })} />
-      <RangeField label="Peso" min={300} max={800} step={100} value={theme.fontWeight} onChange={(v) => onChange({ fontWeight: v })} />
-      <label>
-        Colore testo
-        <input type="color" value={theme.textColor} onChange={(e) => onChange({ textColor: e.target.value })} />
-      </label>
-      <label>
-        Colore accento
-        <input type="color" value={theme.accentColor} onChange={(e) => onChange({ accentColor: e.target.value })} />
-      </label>
-      <label>
-        Tinta UI
-        <input type="color" value={theme.uiTint} onChange={(e) => onChange({ uiTint: e.target.value })} />
-      </label>
-      <label>
-        Sfondo pagina default
-        <input
-          type="color"
-          value={theme.defaultPageBgColor || "#ffffff"}
-          onChange={(e) => onChange({ defaultPageBgColor: e.target.value })}
-        />
-      </label>
-      <label>
-        Sfondo copertina
-        <input
-          type="color"
-          value={theme.defaultCoverBgColor || "#ffffff"}
-          onChange={(e) => onChange({ defaultCoverBgColor: e.target.value })}
-        />
-      </label>
-      <ColorAlphaField
-        label="Sfondo rettangoli testo default"
-        value={theme.defaultTextBgColor || "rgba(255, 255, 255, 0.42)"}
-        fallback="rgba(255, 255, 255, 0.42)"
-        onChange={(color) => onChange({ defaultTextBgColor: color })}
-      />
-      <label>
-        Colore numero pagina default
-        <input
-          type="color"
-          value={theme.defaultPageNumberColor || "#6b614f"}
-          onChange={(e) => onChange({ defaultPageNumberColor: e.target.value })}
-        />
-      </label>
-      <div className="grid-2">
-        <label className="inline-check">
-          <input
-            type="checkbox"
-            checked={theme.autoShowCaptionDefault ?? true}
-            onChange={(e) => onChange({ autoShowCaptionDefault: e.target.checked })}
+
+      <div className="theme-tabs template-tabs">
+        <button className={tab === "typography" ? "active" : ""} onClick={() => setTab("typography")}>Tipografia</button>
+        <button className={tab === "captions" ? "active" : ""} onClick={() => setTab("captions")}>Didascalie</button>
+        <button className={tab === "page" ? "active" : ""} onClick={() => setTab("page")}>Pagina</button>
+        <button className={tab === "colors" ? "active" : ""} onClick={() => setTab("colors")}>Colori</button>
+        <button className={tab === "elements" ? "active" : ""} onClick={() => setTab("elements")}>Elementi</button>
+      </div>
+
+      {tab === "typography" && (
+        <div className="theme-tab-content">
+          <label>
+            Font
+            <select
+              value={theme.fontFamily}
+              onChange={(e) => onChange({ fontFamily: e.target.value })}
+              style={{ fontFamily: theme.fontFamily }}
+            >
+              {FONT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value} style={{ fontFamily: opt.value }}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <RangeField label="Font base" min={6} max={24} value={theme.bodyFontSize} onChange={(v) => onChange({ bodyFontSize: v })} />
+          <RangeField label="Titoli" min={18} max={42} value={theme.titleFontSize} onChange={(v) => onChange({ titleFontSize: v })} />
+          <RangeField label="Peso" min={300} max={800} step={100} value={theme.fontWeight} onChange={(v) => onChange({ fontWeight: v })} />
+        </div>
+      )}
+
+      {tab === "captions" && (
+        <div className="theme-tab-content">
+          <label className="inline-check">
+            <input
+              type="checkbox"
+              checked={theme.autoShowCaptionDefault ?? true}
+              onChange={(e) => onChange({ autoShowCaptionDefault: e.target.checked })}
+            />
+            Default mostra didascalia (auto)
+          </label>
+          <RangeField
+            label="Font didascalie"
+            min={6}
+            max={42}
+            value={theme.captionFontSize ?? theme.bodyFontSize ?? 16}
+            onChange={(v) => onChange({ captionFontSize: v })}
           />
-          Default mostra didascalia (auto)
-        </label>
-        <RangeField
-          label="Font didascalie"
-          min={6}
-          max={42}
-          value={theme.captionFontSize ?? theme.bodyFontSize ?? 16}
-          onChange={(v) => onChange({ captionFontSize: v })}
-        />
-      </div>
-      <RangeField
-        label="Bordo elementi default %"
-        min={0}
-        max={20}
-        value={theme.defaultElementBorderPct ?? 3}
-        onChange={(v) => onChange({ defaultElementBorderPct: v })}
-      />
-      <label>
-        Colore bordo elementi default
-        <input
-          type="color"
-          value={theme.defaultElementBorderColor || "#ffffff"}
-          onChange={(e) => onChange({ defaultElementBorderColor: e.target.value })}
-        />
-      </label>
-      <div className="grid-2">
-        <RangeField
-          label="Margine top"
-          min={0}
-          max={80}
-          value={theme.pageMargins?.top ?? DEFAULT_THEME_MARGINS.top}
-          onChange={(v) => onMarginsChange?.({ top: v })}
-        />
-        <RangeField
-          label="Margine right"
-          min={0}
-          max={80}
-          value={theme.pageMargins?.right ?? DEFAULT_THEME_MARGINS.right}
-          onChange={(v) => onMarginsChange?.({ right: v })}
-        />
-        <RangeField
-          label="Margine bottom"
-          min={0}
-          max={80}
-          value={theme.pageMargins?.bottom ?? DEFAULT_THEME_MARGINS.bottom}
-          onChange={(v) => onMarginsChange?.({ bottom: v })}
-        />
-        <RangeField
-          label="Margine left"
-          min={0}
-          max={80}
-          value={theme.pageMargins?.left ?? DEFAULT_THEME_MARGINS.left}
-          onChange={(v) => onMarginsChange?.({ left: v })}
-        />
-      </div>
+        </div>
+      )}
+
+      {tab === "colors" && (
+        <div className="theme-tab-content">
+          <label>
+            Colore accento
+            <input type="color" value={theme.accentColor} onChange={(e) => onChange({ accentColor: e.target.value })} />
+          </label>
+          <label>
+            Tinta UI
+            <input type="color" value={theme.uiTint} onChange={(e) => onChange({ uiTint: e.target.value })} />
+          </label>
+        </div>
+      )}
+
+      {tab === "page" && (
+        <div className="theme-tab-content">
+          <label>
+            Sfondo pagina default
+            <input
+              type="color"
+              value={theme.defaultPageBgColor || "#ffffff"}
+              onChange={(e) => onChange({ defaultPageBgColor: e.target.value })}
+            />
+          </label>
+          <label>
+            Sfondo copertina
+            <input
+              type="color"
+              value={theme.defaultCoverBgColor || "#ffffff"}
+              onChange={(e) => onChange({ defaultCoverBgColor: e.target.value })}
+            />
+          </label>
+          <label>
+            Colore testo
+            <input type="color" value={theme.textColor} onChange={(e) => onChange({ textColor: e.target.value })} />
+          </label>
+          <label>
+            Colore numero pagina default
+            <input
+              type="color"
+              value={theme.defaultPageNumberColor || "#6b614f"}
+              onChange={(e) => onChange({ defaultPageNumberColor: e.target.value })}
+            />
+          </label>
+          <div className="grid-2">
+            <RangeField
+              label="Margine top"
+              min={0}
+              max={80}
+              value={theme.pageMargins?.top ?? DEFAULT_THEME_MARGINS.top}
+              onChange={(v) => onMarginsChange?.({ top: v })}
+            />
+            <RangeField
+              label="Margine right"
+              min={0}
+              max={80}
+              value={theme.pageMargins?.right ?? DEFAULT_THEME_MARGINS.right}
+              onChange={(v) => onMarginsChange?.({ right: v })}
+            />
+            <RangeField
+              label="Margine bottom"
+              min={0}
+              max={80}
+              value={theme.pageMargins?.bottom ?? DEFAULT_THEME_MARGINS.bottom}
+              onChange={(v) => onMarginsChange?.({ bottom: v })}
+            />
+            <RangeField
+              label="Margine left"
+              min={0}
+              max={80}
+              value={theme.pageMargins?.left ?? DEFAULT_THEME_MARGINS.left}
+              onChange={(v) => onMarginsChange?.({ left: v })}
+            />
+          </div>
+        </div>
+      )}
+
+      {tab === "elements" && (
+        <div className="theme-tab-content">
+          <ColorAlphaField
+            label="Sfondo rettangoli testo default"
+            value={theme.defaultTextBgColor || "rgba(255, 255, 255, 0.42)"}
+            fallback="rgba(255, 255, 255, 0.42)"
+            onChange={(color) => onChange({ defaultTextBgColor: color })}
+          />
+          <RangeField
+            label="Bordo elementi default %"
+            min={0}
+            max={20}
+            value={theme.defaultElementBorderPct ?? 3}
+            onChange={(v) => onChange({ defaultElementBorderPct: v })}
+          />
+          <label>
+            Colore bordo elementi default
+            <input
+              type="color"
+              value={theme.defaultElementBorderColor || "#ffffff"}
+              onChange={(e) => onChange({ defaultElementBorderColor: e.target.value })}
+            />
+          </label>
+        </div>
+      )}
     </div>
   );
 }
