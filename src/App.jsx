@@ -477,6 +477,24 @@ function getPlacementCaptionGapMm(placement, fallback = 8) {
   return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback;
 }
 
+function getThemeMasonryImagesPerRow(themeLike, fallback = 3) {
+  const parsed = Number(themeLike?.masonryImagesPerRow);
+  if (!Number.isFinite(parsed)) return fallback;
+  return clampNum(Math.round(parsed), 1, 8);
+}
+
+function getThemeMasonryRowsPerPage(themeLike, fallback = 3) {
+  const parsed = Number(themeLike?.masonryRowsPerPage);
+  if (!Number.isFinite(parsed)) return fallback;
+  return clampNum(Math.round(parsed), 1, 10);
+}
+
+function getThemeMasonryCapacity(themeLike) {
+  const perRow = getThemeMasonryImagesPerRow(themeLike, 3);
+  const rows = getThemeMasonryRowsPerPage(themeLike, 3);
+  return Math.max(1, perRow * rows);
+}
+
 function createInsideBackCoverPage(marginsOverride, themeCfg = null) {
   const page = createPage("inside-back-cover", "Terza di copertina", marginsOverride);
   page.showPageNumber = false;
@@ -561,6 +579,8 @@ function createDefaultState(themeSeed = null) {
     defaultTextBorderColor: "#ffffff",
     defaultPageNumberColor: "#6b614f",
     defaultTextBgColor: "rgba(255, 255, 255, 0.42)",
+    masonryImagesPerRow: 3,
+    masonryRowsPerPage: 3,
     defaultPrefaceBodyMd: DEFAULT_PREFACE_BODY_MD,
     defaultThanksBodyMd: DEFAULT_THANKS_BODY_MD,
     defaultCreditsMd: DEFAULT_CREDITS_MD,
@@ -1540,16 +1560,17 @@ function buildPlacementCaptionForWork(work, slotW, aspectRatio, themeCfg) {
   };
 }
 
-function createPlacementForSlotWork(work, slot, themeCfg, aspectRatio, zIndex = 100) {
+function createPlacementForSlotWork(work, slot, themeCfg, aspectRatio, zIndex = 100, options = {}) {
+  const minImageSize = Math.max(5, Number(options?.minImageSizeMm) || 40);
   const safeSlot = {
     x: Math.round(slot?.x || 0),
     y: Math.round(slot?.y || 0),
-    w: Math.max(40, Math.round(slot?.w || 40)),
-    h: Math.max(40, Math.round(slot?.h || 40)),
+    w: Math.max(minImageSize, Math.round(slot?.w || minImageSize)),
+    h: Math.max(minImageSize, Math.round(slot?.h || minImageSize)),
   };
   const caption = buildPlacementCaptionForWork(work, safeSlot.w, aspectRatio, themeCfg);
   let captionH = caption.showCaption ? Math.max(5, caption.h || 5) : 5;
-  let imageBoxH = Math.max(40, safeSlot.h - (caption.showCaption ? captionH + caption.gap : 0));
+  let imageBoxH = Math.max(minImageSize, safeSlot.h - (caption.showCaption ? captionH + caption.gap : 0));
   let fitted = fitAspectRatioToBox(aspectRatio, safeSlot.w, imageBoxH);
   if (caption.showCaption) {
     const captionFontSize = Number(themeCfg?.captionFontSize) || Number(themeCfg?.bodyFontSize) || 16;
@@ -1557,7 +1578,7 @@ function createPlacementForSlotWork(work, slot, themeCfg, aspectRatio, zIndex = 
       const nextCaptionH = Math.max(5, estimateCaptionHeight(caption.text, Math.max(5, fitted.w), captionFontSize));
       if (Math.abs(nextCaptionH - captionH) < 1) break;
       captionH = nextCaptionH;
-      imageBoxH = Math.max(40, safeSlot.h - (captionH + caption.gap));
+      imageBoxH = Math.max(minImageSize, safeSlot.h - (captionH + caption.gap));
       fitted = fitAspectRatioToBox(aspectRatio, safeSlot.w, imageBoxH);
     }
   }
@@ -1567,6 +1588,7 @@ function createPlacementForSlotWork(work, slot, themeCfg, aspectRatio, zIndex = 
   placement.zIndex = zIndex;
   placement.w = fitted.w;
   placement.h = fitted.h;
+  placement.minSizeMm = minImageSize;
   placement.showCaption = caption.showCaption;
   placement.captionGapMm = getThemeCaptionGapMm(themeCfg, 8);
   placement.captionOverride = caption.text;
@@ -1835,29 +1857,58 @@ function buildMasonryRows(items, areaW, targetRowHeight, minPerRow, maxPerRow, g
 function buildMasonryPlacements(works, areaW, areaH, dimMap, themeCfg) {
   const items = (works || []).map((work) => ({ work, aspect: getWorkAspectRatio(work, dimMap) }));
   if (!items.length) return { placements: [], valid: true, fillRatio: 0, rowCount: 0, totalHeight: 0 };
-  if (items.length < 3) return buildFixedPresetPlacements(items.length === 1 ? "single" : "double", works, areaW, areaH, dimMap, themeCfg);
-  const gapX = 10;
-  const gapY = 10;
-  const minPerRow = Math.min(3, items.length);
-  const maxPerRow = Math.max(minPerRow, areaW >= areaH ? 6 : 5);
-  const avgAspect = items.reduce((sum, item) => sum + item.aspect, 0) / items.length;
-  const targetRowHeight = Math.max(52, Math.min(areaH * 0.42, (areaW - gapX * 2) / Math.max(0.5, avgAspect * 3)));
-  const rows = buildMasonryRows(items, areaW, targetRowHeight, minPerRow, maxPerRow, gapX);
+  const perRow = getThemeMasonryImagesPerRow(themeCfg, 3);
+  const maxRowsCfg = getThemeMasonryRowsPerPage(themeCfg, 3);
+  const gapX = perRow >= 7 ? 2 : perRow >= 5 ? 4 : perRow >= 3 ? 6 : 10;
+  const gapY = 6;
+  const minImageSize = 5;
+  const rows = Math.max(1, maxRowsCfg);
+  const capacity = Math.max(1, perRow * rows);
+  const count = Math.min(items.length, capacity);
+  const colW = Math.max(minImageSize, Math.floor((areaW - gapX * Math.max(0, perRow - 1)) / Math.max(1, perRow)));
+  const rowH = Math.max(minImageSize, Math.floor((areaH - gapY * Math.max(0, rows - 1)) / Math.max(1, rows)));
   const placements = [];
-  let y = 0;
-  rows.forEach((row) => {
-    const built = buildJustifiedRowPlacements(row, y, areaW, gapX, themeCfg, 100 + placements.length * 10);
-    if (y + built.rowHeight > areaH + 1) return;
-    placements.push(...built.placements);
-    y += built.rowHeight + gapY;
-  });
-  const totalHeight = placements.length ? y - gapY : 0;
+
+  for (let idx = 0; idx < count; idx += 1) {
+    const rowIdx = Math.floor(idx / perRow);
+    const colIdx = idx % perRow;
+    const slot = {
+      x: Math.round(colIdx * (colW + gapX)),
+      y: Math.round(rowIdx * (rowH + gapY)),
+      w: colW,
+      h: rowH,
+    };
+    placements.push(
+      createPlacementForSlotWork(
+        items[idx].work,
+        slot,
+        themeCfg,
+        items[idx].aspect,
+        100 + idx * 10,
+        { minImageSizeMm: minImageSize },
+      ),
+    );
+  }
+
+  const occupiedRows = Math.max(1, Math.ceil(count / Math.max(1, perRow)));
+  const totalHeight = Math.min(areaH, occupiedRows * rowH + Math.max(0, occupiedRows - 1) * gapY);
+  if (placements.length) {
+    return {
+      placements,
+      valid: true,
+      fillRatio: totalHeight / Math.max(1, areaH),
+      rowCount: occupiedRows,
+      totalHeight,
+      count,
+    };
+  }
   return {
-    placements,
-    valid: totalHeight <= areaH + 1,
-    fillRatio: totalHeight / Math.max(1, areaH),
-    rowCount: rows.length,
-    totalHeight,
+    placements: [],
+    valid: false,
+    fillRatio: 0,
+    rowCount: 0,
+    totalHeight: 0,
+    count: 0,
   };
 }
 
@@ -1898,21 +1949,13 @@ function buildLayoutPageFromWorks(works, presetId, pageFormatId, margins, dimMap
 
 function chooseMasonryCatalogChunk(works, pageFormatId, margins, dimMap, themeCfg, boundsOverride = null) {
   const area = resolveLayoutArea(pageFormatId, margins, boundsOverride);
-  let best = null;
-  const maxItems = Math.min(18, works.length);
-  for (let count = 3; count <= maxItems; count += 1) {
-    const candidate = buildMasonryPlacements(works.slice(0, count), area.width, area.height, dimMap, themeCfg);
-    if (!candidate.valid) break;
-    const score = candidate.fillRatio + count * 0.03 - candidate.rowCount * 0.015;
-    if (!best || score > best.score) {
-      best = {
-        count,
-        placements: candidate.placements,
-        score,
-      };
-    }
+  const candidate = buildMasonryPlacements(works, area.width, area.height, dimMap, themeCfg);
+  if (candidate.valid && candidate.count > 0) {
+    return {
+      count: candidate.count,
+      placements: candidate.placements,
+    };
   }
-  if (best) return best;
   const fallbackCount = Math.min(works.length, works.length >= 2 ? 2 : 1);
   const fallbackPreset = fallbackCount >= 2 ? "double" : "single";
   return {
@@ -1995,8 +2038,9 @@ function resolveCaptionBoundsForPlacement(p, box, x, y, w, h, { soft = false } =
 }
 
 function normalizePlacementToBounds(p, box) {
-  const w = clampNum(p.w ?? 150, 40, box.maxWidth);
-  const h = clampNum(p.h ?? 150, 40, box.maxHeight);
+  const minSize = Math.max(5, Number(p?.minSizeMm) || 40);
+  const w = clampNum(p.w ?? 150, minSize, box.maxWidth);
+  const h = clampNum(p.h ?? 150, minSize, box.maxHeight);
   const x = clampNum(p.x ?? 0, box.minX, Math.max(box.minX, box.maxXForWidth(w)));
   const y = clampNum(p.y ?? 0, box.minY, Math.max(box.minY, box.maxYForHeight(h)));
   const caption = resolveCaptionBoundsForPlacement(p, box, x, y, w, h, { soft: false });
@@ -2024,10 +2068,11 @@ function fitTextBlockToBoundsSoft(txt, box) {
 }
 
 function fitPlacementToBoundsSoft(p, box) {
-  const rawW = Math.max(40, Number(p.w ?? 150));
-  const rawH = Math.max(40, Number(p.h ?? 190));
-  const w = rawW > box.maxWidth ? Math.max(40, box.maxWidth) : rawW;
-  const h = rawH > box.maxHeight ? Math.max(40, box.maxHeight) : rawH;
+  const minSize = Math.max(5, Number(p?.minSizeMm) || 40);
+  const rawW = Math.max(minSize, Number(p.w ?? 150));
+  const rawH = Math.max(minSize, Number(p.h ?? 190));
+  const w = rawW > box.maxWidth ? Math.max(minSize, box.maxWidth) : rawW;
+  const h = rawH > box.maxHeight ? Math.max(minSize, box.maxHeight) : rawH;
   const x = clampNum(p.x ?? 0, box.minX, Math.max(box.minX, box.maxXForWidth(w)));
   const y = clampNum(p.y ?? 0, box.minY, Math.max(box.minY, box.maxYForHeight(h)));
   const caption = resolveCaptionBoundsForPlacement(p, box, x, y, w, h, { soft: true });
@@ -2085,6 +2130,7 @@ export default function App() {
   const skipNextPageFormatAdjustRef = useRef(false);
   const [workEditor, setWorkEditor] = useState({ open: false, draft: null, mode: "create" });
   const [themeOpen, setThemeOpen] = useState(false);
+  const [themePanelTab, setThemePanelTab] = useState("typography");
   const [templateOpen, setTemplateOpen] = useState(false);
   const [dragDropActive, setDragDropActive] = useState(false);
   const [persistWarning, setPersistWarning] = useState("");
@@ -2817,6 +2863,11 @@ export default function App() {
         if (filled.length < preset.fixedCount) filled.push(work);
       });
       return filled.slice(0, preset.fixedCount);
+    }
+    if (presetId === "masonry") {
+      const limit = getThemeMasonryCapacity(snapshot?.theme);
+      if (pageWorks.length) return pageWorks.slice(0, limit);
+      return remainingWorks.slice(0, limit);
     }
     if (pageWorks.length) return pageWorks.slice(0, 8);
     return remainingWorks.slice(0, 8);
@@ -3944,6 +3995,8 @@ export default function App() {
           onClose={() => setThemeOpen(false)}
           onChange={patchTheme}
           onMarginsChange={updateGlobalMargins}
+          activeTab={themePanelTab}
+          onTabChange={setThemePanelTab}
         />
       )}
 
@@ -4248,9 +4301,9 @@ function LayoutPanel({
   );
 }
 
-function ThemePanel({ theme, onChange, onMarginsChange, onClose }) {
-  const [tab, setTab] = useState("typography");
-
+function ThemePanel({ theme, onChange, onMarginsChange, onClose, activeTab = "typography", onTabChange }) {
+  const tab = activeTab;
+  const setTab = onTabChange || (() => {});
   return (
     <div className="floating-panel theme-panel">
       <div className="floating-head">
@@ -4262,6 +4315,7 @@ function ThemePanel({ theme, onChange, onMarginsChange, onClose }) {
         <button className={tab === "typography" ? "active" : ""} onClick={() => setTab("typography")}>Tipografia</button>
         <button className={tab === "captions" ? "active" : ""} onClick={() => setTab("captions")}>Didascalie</button>
         <button className={tab === "page" ? "active" : ""} onClick={() => setTab("page")}>Pagina</button>
+        <button className={tab === "layout" ? "active" : ""} onClick={() => setTab("layout")}>Layout</button>
         <button className={tab === "colors" ? "active" : ""} onClick={() => setTab("colors")}>Colori</button>
         <button className={tab === "elements" ? "active" : ""} onClick={() => setTab("elements")}>Elementi</button>
       </div>
@@ -4388,6 +4442,28 @@ function ThemePanel({ theme, onChange, onMarginsChange, onClose }) {
               onChange={(v) => onMarginsChange?.({ left: v })}
             />
           </div>
+        </div>
+      )}
+
+      {tab === "layout" && (
+        <div className="theme-tab-content">
+          <RangeField
+            label="Masonry: immagini per riga"
+            min={1}
+            max={8}
+            value={getThemeMasonryImagesPerRow(theme, 3)}
+            onChange={(v) => onChange({ masonryImagesPerRow: v })}
+          />
+          <RangeField
+            label="Masonry: righe per pagina"
+            min={1}
+            max={10}
+            value={getThemeMasonryRowsPerPage(theme, 3)}
+            onChange={(v) => onChange({ masonryRowsPerPage: v })}
+          />
+          <small className="muted">
+            Capienza pagina masonry: {getThemeMasonryCapacity(theme)} immagini
+          </small>
         </div>
       )}
 
