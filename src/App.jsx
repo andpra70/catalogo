@@ -15,6 +15,7 @@ const DEFAULT_BACK_SUMMARY_MD =
   "## Sintesi\nUna selezione di opere tra fotografia, pittura e immagini d'autore che esplora materia, luce e memoria in forma di catalogo editoriale.\n\n### Focus\n- sequenza narrativa per nuclei tematici\n- alternanza tra immagini e testi\n- attenzione al progetto grafico";
 const DEFAULT_BACK_BIO_MD =
   "# Biografia Autore\n## Profilo\n**Andrea Rossi** (1987) vive e lavora a Milano.\nE un artista visivo che unisce *fotografia*, **pittura** e pratiche editoriali.\n\n### Ricerca\n- memoria e archivio\n- paesaggio contemporaneo\n- rapporto tra immagine e narrazione\n\n> Nota curatoriale: il suo lavoro alterna rigore documentario e visione poetica.\n\n## Percorso\n1. Formazione in arti visive e fotografia\n2. Prime mostre collettive in spazi indipendenti\n3. Sviluppo di progetti ibridi tra stampa e installazione";
+const DEFAULT_BACK_COVER_MD = `${DEFAULT_BACK_SUMMARY_MD}\n\n${DEFAULT_BACK_BIO_MD}`;
 const DEFAULT_INTRO_CURATORIAL_MD =
   "# Introduzione\nQuesto catalogo nasce come strumento di lettura e di lavoro: non solo una raccolta di immagini, ma un percorso tra opere, materiali e relazioni.\n\n## Intento editoriale\nLa sequenza delle pagine costruisce una progressione che alterna visione ravvicinata e visione d'insieme, con l'obiettivo di valorizzare ritmo, pause e contrasti.\n\n### Obiettivi\n- restituire il contesto di produzione delle opere\n- evidenziare continuita e differenze tra i cicli\n- offrire una consultazione chiara per studio, archivio e presentazione\n\n## Testo curatoriale\nLa selezione propone un attraversamento tematico tra **materia**, *luce* e memoria visiva. Ogni nucleo mette in dialogo immagini con scale differenti, affinita formali e scarti narrativi.\n\n### Chiavi di lettura\n1. rapporto tra superficie e profondita\n2. tensione tra documento e interpretazione\n3. costruzione di una grammatica visiva coerente\n\n> Nota: questo testo e un template di base. Personalizzalo con riferimenti puntuali a mostra, opere e cronologia.\n\nPer approfondimenti critici: [scheda progetto](https://example.com).";
 const DEFAULT_THEME_FONT = "'Archivo', sans-serif";
@@ -86,7 +87,10 @@ const WORK_FIELDS = [
 
 const PAGE_FORMATS = [
   { id: "a4-portrait", label: "A4 Verticale", width: 210, height: 297 },
-  { id: "square", label: "Quadrato", width: 240, height: 240 },
+  { id: "square-20x20", label: "Quadrato 20 x 20 cm", width: 200, height: 200 },
+  { id: "square-21x21", label: "Quadrato 21 x 21 cm", width: 210, height: 210 },
+  { id: "square-24x24", label: "Quadrato 24 x 24 cm", width: 240, height: 240 },
+  { id: "square-30x30", label: "Quadrato 30 x 30 cm", width: 300, height: 300 },
   { id: "landscape", label: "Orizzontale", width: 297, height: 210 },
   { id: "a5-portrait", label: "A5 Verticale", width: 148, height: 210 },
   { id: "a5-landscape", label: "A5 Orizzontale", width: 210, height: 148 },
@@ -99,8 +103,13 @@ const PAGE_FORMATS = [
   { id: "legal-portrait", label: "US Legal Verticale", width: 216, height: 356 },
   { id: "b5-portrait", label: "B5 Verticale", width: 176, height: 250 },
   { id: "b5-landscape", label: "B5 Orizzontale", width: 250, height: 176 },
-  { id: "square-small", label: "Quadrato 210", width: 210, height: 210 },
 ];
+
+const LEGACY_PAGE_FORMAT_ID_MAP = {
+  square: "square-24x24",
+  "square-small": "square-21x21",
+};
+const PAGE_FORMAT_IDS = new Set(PAGE_FORMATS.map((f) => f.id));
 
 const LAYOUT_PRESETS = [
   {
@@ -134,7 +143,14 @@ const LAYOUT_PRESETS = [
 ];
 
 function getPageFormat(formatId) {
-  return PAGE_FORMATS.find((f) => f.id === formatId) || PAGE_FORMATS[0];
+  const normalizedId = normalizePageFormatId(formatId);
+  return PAGE_FORMATS.find((f) => f.id === normalizedId) || PAGE_FORMATS.find((f) => f.id === DEFAULT_PAGE_FORMAT_ID) || PAGE_FORMATS[0];
+}
+
+function normalizePageFormatId(formatId, fallbackId = DEFAULT_PAGE_FORMAT_ID) {
+  const mappedId = LEGACY_PAGE_FORMAT_ID_MAP[formatId] || formatId;
+  if (PAGE_FORMAT_IDS.has(mappedId)) return mappedId;
+  return PAGE_FORMAT_IDS.has(fallbackId) ? fallbackId : DEFAULT_PAGE_FORMAT_ID;
 }
 
 function uid(prefix = "id") {
@@ -431,6 +447,14 @@ function createInsideFrontCoverPage(marginsOverride, pageFormatId = DEFAULT_PAGE
   return page;
 }
 
+function getDefaultBackCoverMd(themeLike) {
+  const direct = String(themeLike?.defaultBackCoverMd || "").trim();
+  if (direct) return direct;
+  const summary = String(themeLike?.defaultBackSummaryMd || DEFAULT_BACK_SUMMARY_MD).trim();
+  const bio = String(themeLike?.defaultBackBioMd || DEFAULT_BACK_BIO_MD).trim();
+  return [summary, bio].filter(Boolean).join("\n\n") || DEFAULT_BACK_COVER_MD;
+}
+
 function createInsideBackCoverPage(marginsOverride) {
   const page = createPage("inside-back-cover", "Terza di copertina", marginsOverride);
   page.showPageNumber = false;
@@ -530,8 +554,7 @@ function createDefaultState(themeSeed = null) {
     defaultTextBgColor: "rgba(255, 255, 255, 0.42)",
     defaultPrefaceTitleMd: DEFAULT_PREFACE_TITLE_MD,
     defaultPrefaceBodyMd: DEFAULT_PREFACE_BODY_MD,
-    defaultBackSummaryMd: DEFAULT_BACK_SUMMARY_MD,
-    defaultBackBioMd: DEFAULT_BACK_BIO_MD,
+    defaultBackCoverMd: getDefaultBackCoverMd(seed),
     defaultIntroCuratorialMd: DEFAULT_INTRO_CURATORIAL_MD,
     ...seed,
     pageMargins: { ...defaultMargins, ...(seed.pageMargins || {}) },
@@ -597,12 +620,11 @@ function createDefaultState(themeSeed = null) {
   {
     const backArea = getPageContentBounds(coverBack, DEFAULT_PAGE_FORMAT_ID);
     const topPad = Math.max(18, Math.round(backArea.height * 0.05));
-    const gap = Math.max(10, Math.round(backArea.height * 0.03));
-    const summaryBlock = createFullWidthTextBlock(
+    const backTextBlock = createFullWidthTextBlock(
       {
-        text: theme.defaultBackSummaryMd || DEFAULT_BACK_SUMMARY_MD,
-        fontSize: 13,
-        fontWeight: 500,
+        text: getDefaultBackCoverMd(theme),
+        fontSize: 12,
+        fontWeight: 400,
         align: "left",
         borderWidthPct: theme.defaultElementBorderPct ?? 3,
       },
@@ -610,31 +632,7 @@ function createDefaultState(themeSeed = null) {
       topPad,
       theme.titleFontSize,
     );
-    const bioBlock = createFullWidthTextBlock(
-      {
-        text: theme.defaultBackBioMd || DEFAULT_BACK_BIO_MD,
-        fontSize: 12,
-        fontWeight: 400,
-        align: "left",
-        borderWidthPct: theme.defaultElementBorderPct ?? 3,
-      },
-      backArea.width,
-      summaryBlock.y + summaryBlock.h + gap,
-      theme.titleFontSize,
-    );
-    const editionBlock = createFullWidthTextBlock(
-      {
-        text: "Edizione 1/200\nCodice edizione: CAT-2026-001",
-        fontSize: 11,
-        fontWeight: 500,
-        align: "left",
-        borderWidthPct: theme.defaultElementBorderPct ?? 3,
-      },
-      backArea.width,
-      bioBlock.y + bioBlock.h + gap,
-      theme.titleFontSize,
-    );
-    coverBack.textBlocks = [summaryBlock, bioBlock, editionBlock];
+    coverBack.textBlocks = [backTextBlock];
   }
 
   return {
@@ -647,7 +645,6 @@ function createDefaultState(themeSeed = null) {
     selectedElement: null,
     theme,
     pageFormat: DEFAULT_PAGE_FORMAT_ID,
-    summaryPageEdits: {},
     specialPages: {
       insideFront: createInsideFrontCoverPage(projectMargins, DEFAULT_PAGE_FORMAT_ID, theme),
       insideBack: createInsideBackCoverPage(projectMargins),
@@ -808,8 +805,8 @@ function loadState() {
     return {
       ...base,
       ...parsed,
+      pageFormat: normalizePageFormatId(parsed.pageFormat, base.pageFormat),
       theme,
-      summaryPageEdits: parsed.summaryPageEdits || {},
       specialPages: {
         insideFront: {
           ...baseSpecial.insideFront,
@@ -843,92 +840,21 @@ function defaultPlacementCaption(placement, work) {
   return [workLabel(work), [work?.author, work?.year].filter(Boolean).join(", ")].filter(Boolean).join("\n");
 }
 
-function buildSummaryPageMarkdown(entries, pageIndex = 0) {
-  const heading = pageIndex === 0 ? "# Elenco opere" : `# Elenco opere (${pageIndex + 1})`;
-  if (!entries.length) return `${heading}\n\nNessuna opera inserita.`;
-  return `${heading}\n\n${entries.join("\n")}`;
-}
+function buildWorksIndexMarkdown(works, workPageMap = new Map()) {
+  const insertedWorks = (works || [])
+    .map((work, order) => ({ work, order, pageNo: workPageMap.get(work.id) }))
+    .filter((item) => Number.isFinite(item.pageNo));
 
-function fitSummaryFontSizeToSinglePage(text, area, initialFontSize, borderWidthPct, themeTitleSize) {
-  let fontSize = Math.max(6, Number(initialFontSize) || 11);
-  while (fontSize > 6) {
-    const height = estimateTextBlockHeight(text, area.width, fontSize, borderWidthPct, themeTitleSize);
-    if (height <= area.height) return fontSize;
-    fontSize -= 1;
-  }
-  return 6;
-}
+  if (!insertedWorks.length) return "# Elenco opere\n\nNessuna opera inserita nelle pagine.";
 
-function summaryPagesFromWorks(
-  works,
-  marginsOverride,
-  workPageMap = new Map(),
-  summaryPageEdits = {},
-  defaultBgColor = "#ffffff",
-  defaultBorderPct = 3,
-  defaultPageNumberColor = "#6b614f",
-  pageFormatId = DEFAULT_PAGE_FORMAT_ID,
-) {
-  const margins = marginsOverride || { top: 28, right: 26, bottom: 38, left: 26 };
-  const area = getPageContentBounds({ margins }, pageFormatId);
-  const baseFontSize = Math.max(11, Math.round(area.height * 0.045));
-  const titleSize = Math.max(26, Math.round(area.height * 0.075));
-  const entries = (works || []).map((work, idx) => {
-    const pageNo = workPageMap.get(work.id);
+  insertedWorks.sort((a, b) => a.pageNo - b.pageNo || a.order - b.order);
+  const entries = insertedWorks.map(({ work, pageNo }, idx) => {
     const title = workLabel(work);
     const author = work.author?.trim() || "n/d";
     const year = work.year?.trim() || "n/d";
-    const pageLabel = pageNo ?? "-";
-    return `${idx + 1}. **${title}** — *${author}* — anno: ${year} — **pag. ${pageLabel}**`;
+    return `${idx + 1}. **${title}** — *${author}* — anno: ${year} — **pag. ${pageNo}**`;
   });
-  const pageText = buildSummaryPageMarkdown(entries, 0);
-  const listFontSize = fitSummaryFontSizeToSinglePage(pageText, area, baseFontSize, defaultBorderPct, titleSize);
-  const generatedBlock = {
-    ...createTextBlock(pageText),
-    x: 0,
-    y: 0,
-    w: area.width,
-    h: area.height,
-    fontSize: listFontSize,
-    fontWeight: 400,
-    align: "left",
-    borderWidthPct: defaultBorderPct,
-  };
-  const generated = {
-    id: "summary_0",
-    type: "summary-page",
-    title: "Elenco opere",
-    bgColor: defaultBgColor || "#ffffff",
-    pageNumber: 1,
-    showPageNumber: true,
-    pageNumberColor: defaultPageNumberColor || "#6b614f",
-    margins,
-    textBlocks: [generatedBlock],
-    placements: [],
-  };
-  const edit = summaryPageEdits?.[generated.id];
-  if (edit?.deleted) return [];
-  if (!edit) return [generated];
-  const editedBlock = Array.isArray(edit.textBlocks) ? edit.textBlocks[0] : null;
-  return [
-    {
-      ...generated,
-      ...edit,
-      margins: { ...(generated.margins || {}), ...(edit.margins || {}) },
-      textBlocks: [
-        {
-          ...generated.textBlocks[0],
-          ...(editedBlock || {}),
-          text: generated.textBlocks[0]?.text || "",
-          x: editedBlock?.x ?? generated.textBlocks[0].x,
-          y: editedBlock?.y ?? generated.textBlocks[0].y,
-          w: editedBlock?.w ?? generated.textBlocks[0].w,
-          h: editedBlock?.h ?? generated.textBlocks[0].h,
-        },
-      ],
-      placements: edit.placements || generated.placements,
-    },
-  ];
+  return `# Elenco opere\n\n${entries.join("\n")}`;
 }
 
 function scalePageLayoutForFormat(page, fromFormatId, toFormatId, boundMode = "margins") {
@@ -1099,6 +1025,11 @@ function createPlacementForWork(workId, x = 42, y = 42) {
     captionY: y + 196,
     captionW: 220,
     captionH: 52,
+    captionFontSize: 16,
+    captionFontWeight: 500,
+    captionColor: "#1f1f1f",
+    captionBgColor: "rgba(255, 255, 255, 0.42)",
+    captionAlign: "center",
     captionBorderWidthPct: 5,
     captionBorderColor: "#ffffff",
   };
@@ -1224,11 +1155,17 @@ function applyThemeDefaultsToPlacement(placement, theme) {
   const showCaptionDefault = theme?.autoShowCaptionDefault;
   const borderColorDefault = theme?.defaultElementBorderColor || theme?.accentColor;
   const captionBorderColorDefault = theme?.defaultCaptionBorderColor || theme?.accentColor || borderColorDefault;
+  const textBgDefault = theme?.defaultTextBgColor || "rgba(255, 255, 255, 0.42)";
   return {
     ...placement,
     borderWidthPct: Number.isFinite(Number(borderPctDefault)) ? Number(borderPctDefault) : placement.borderWidthPct,
     borderColor: borderColorDefault || placement.borderColor,
     showCaption: typeof showCaptionDefault === "boolean" ? showCaptionDefault : placement.showCaption,
+    captionFontSize: Number.isFinite(Number(placement.captionFontSize)) ? Number(placement.captionFontSize) : theme?.bodyFontSize || 16,
+    captionFontWeight: Number.isFinite(Number(placement.captionFontWeight)) ? Number(placement.captionFontWeight) : theme?.fontWeight || 500,
+    captionColor: placement.captionColor || theme?.textColor || "#1f1f1f",
+    captionBgColor: placement.captionBgColor || textBgDefault,
+    captionAlign: placement.captionAlign || "center",
     captionBorderWidthPct: Number.isFinite(Number(borderPctDefault)) ? Number(borderPctDefault) : placement.captionBorderWidthPct,
     captionBorderColor: captionBorderColorDefault || placement.captionBorderColor,
   };
@@ -1250,6 +1187,11 @@ function applyThemeAutoDefaultsToPage(page, theme) {
       showCaption: showCaptionDefault,
       borderWidthPct: borderPctDefault,
       borderColor: borderColorDefault || p.borderColor,
+      captionFontSize: Number.isFinite(Number(p.captionFontSize)) ? Number(p.captionFontSize) : theme?.bodyFontSize || 16,
+      captionFontWeight: Number.isFinite(Number(p.captionFontWeight)) ? Number(p.captionFontWeight) : theme?.fontWeight || 500,
+      captionColor: p.captionColor || theme?.textColor || "#1f1f1f",
+      captionBgColor: p.captionBgColor || textBgDefault,
+      captionAlign: p.captionAlign || "center",
       captionBorderWidthPct: borderPctDefault,
       captionBorderColor: captionBorderColorDefault || p.captionBorderColor,
     })),
@@ -1759,19 +1701,48 @@ function normalizeTextBlockToBounds(txt, box) {
   return { ...txt, x, y, w, h };
 }
 
+function resolveCaptionBoundsForPlacement(p, box, x, y, w, h, { soft = false } = {}) {
+  const minW = 40;
+  const minH = 24;
+  const rawCaptionW = Math.max(minW, Number(p.captionW ?? 220));
+  const rawCaptionH = Math.max(minH, Number(p.captionH ?? 52));
+  const captionW = soft && rawCaptionW > box.maxWidth ? Math.max(minW, box.maxWidth) : clampNum(rawCaptionW, minW, box.maxWidth);
+  const captionH = soft && rawCaptionH > box.maxHeight ? Math.max(minH, box.maxHeight) : clampNum(rawCaptionH, minH, box.maxHeight);
+
+  const maxCaptionX = Math.max(box.minX, box.maxXForWidth(captionW));
+  const maxCaptionY = Math.max(box.minY, box.maxYForHeight(captionH));
+  const preferredCaptionX = x + (w - captionW) / 2;
+  const belowY = y + h + 8;
+  const aboveY = y - captionH - 8;
+  const canFitBelow = belowY <= maxCaptionY;
+  const canFitAbove = aboveY >= box.minY;
+  const dockedY = canFitBelow ? belowY : canFitAbove ? aboveY : clampNum(belowY, box.minY, maxCaptionY);
+
+  let requestedX = Number.isFinite(Number(p.captionX)) ? Number(p.captionX) : preferredCaptionX;
+  let requestedY = Number.isFinite(Number(p.captionY)) ? Number(p.captionY) : dockedY;
+
+  // Se la didascalia risulta "staccata" dopo resize/cambio formato, ri-aggancia al blocco immagine.
+  const detachThreshold = Math.max(24, h * 0.35);
+  if (Math.abs(requestedY - belowY) > detachThreshold) requestedY = dockedY;
+  if (Math.abs(requestedX - preferredCaptionX) > Math.max(60, w * 0.75)) requestedX = preferredCaptionX;
+
+  const captionX = clampNum(requestedX, box.minX, maxCaptionX);
+  const captionY = clampNum(requestedY, box.minY, maxCaptionY);
+  return {
+    captionX: Math.round(captionX),
+    captionY: Math.round(captionY),
+    captionW: Math.round(captionW),
+    captionH: Math.round(captionH),
+  };
+}
+
 function normalizePlacementToBounds(p, box) {
   const w = clampNum(p.w ?? 150, 40, box.maxWidth);
   const h = clampNum(p.h ?? 150, 40, box.maxHeight);
   const x = clampNum(p.x ?? 0, box.minX, Math.max(box.minX, box.maxXForWidth(w)));
   const y = clampNum(p.y ?? 0, box.minY, Math.max(box.minY, box.maxYForHeight(h)));
-
-  const captionW = clampNum(p.captionW ?? 220, 40, box.maxWidth);
-  const captionH = clampNum(p.captionH ?? 52, 24, box.maxHeight);
-  const captionX = clampNum(p.captionX ?? x, box.minX, Math.max(box.minX, box.maxXForWidth(captionW)));
-  const defaultCaptionY = y + h + 8;
-  const captionY = clampNum(p.captionY ?? defaultCaptionY, box.minY, Math.max(box.minY, box.maxYForHeight(captionH)));
-
-  return { ...p, x, y, w, h, captionX, captionY, captionW, captionH };
+  const caption = resolveCaptionBoundsForPlacement(p, box, x, y, w, h, { soft: false });
+  return { ...p, x, y, w, h, ...caption };
 }
 
 function normalizePageElementsToBounds(page, pageFormatId, boundMode = "margins") {
@@ -1801,14 +1772,7 @@ function fitPlacementToBoundsSoft(p, box) {
   const h = rawH > box.maxHeight ? Math.max(40, box.maxHeight) : rawH;
   const x = clampNum(p.x ?? 0, box.minX, Math.max(box.minX, box.maxXForWidth(w)));
   const y = clampNum(p.y ?? 0, box.minY, Math.max(box.minY, box.maxYForHeight(h)));
-
-  const rawCaptionW = Math.max(40, Number(p.captionW ?? 220));
-  const rawCaptionH = Math.max(24, Number(p.captionH ?? 52));
-  const captionW = rawCaptionW > box.maxWidth ? Math.max(40, box.maxWidth) : rawCaptionW;
-  const captionH = rawCaptionH > box.maxHeight ? Math.max(24, box.maxHeight) : rawCaptionH;
-  const defaultCaptionY = y + h + 8;
-  const captionX = clampNum(p.captionX ?? x, box.minX, Math.max(box.minX, box.maxXForWidth(captionW)));
-  const captionY = clampNum(p.captionY ?? defaultCaptionY, box.minY, Math.max(box.minY, box.maxYForHeight(captionH)));
+  const caption = resolveCaptionBoundsForPlacement(p, box, x, y, w, h, { soft: true });
 
   return {
     ...p,
@@ -1816,10 +1780,7 @@ function fitPlacementToBoundsSoft(p, box) {
     y: Math.round(y),
     w: Math.round(w),
     h: Math.round(h),
-    captionX: Math.round(captionX),
-    captionY: Math.round(captionY),
-    captionW: Math.round(captionW),
-    captionH: Math.round(captionH),
+    ...caption,
   };
 }
 
@@ -1888,6 +1849,10 @@ export default function App() {
     [savedProjects],
   );
   const currentSavedProject = savedProjects.find((project) => project.id === currentProjectId) || null;
+  const effectiveProjectName =
+    String(state.projectTitle || "").trim() ||
+    String(currentSavedProject?.name || "").trim() ||
+    "Progetto";
 
   useEffect(() => {
     function onDocPointerDown(e) {
@@ -1954,36 +1919,6 @@ export default function App() {
     });
   }, [state.specialPages]);
 
-  useEffect(() => {
-    const backCover = state.pages?.find((p) => p.type === "cover-back");
-    if (!backCover) return;
-    const hasEditionCode = (backCover.textBlocks || []).some((t) => String(t.text || "").toLowerCase().includes("codice edizione"));
-    if (hasEditionCode) return;
-    setState((prev) => ({
-      ...prev,
-      pages: (prev.pages || []).map((p) =>
-        p.type !== "cover-back"
-          ? p
-          : {
-              ...p,
-              textBlocks: [
-                ...(p.textBlocks || []),
-                {
-                  ...createTextBlock("Edizione 1/200\nCodice edizione: CAT-2026-001"),
-                  x: 30,
-                  y: 204,
-                  w: 300,
-                  h: 42,
-                  fontSize: 11,
-                  fontWeight: 500,
-                  align: "left",
-                },
-              ],
-            },
-      ),
-    }));
-  }, [state.pages]);
-
   const editablePages = state.pages;
   const editableSpecialPages = [state.specialPages?.insideFront, state.specialPages?.insideBack].filter(Boolean);
   const currentFormat = getPageFormat(state.pageFormat);
@@ -1996,18 +1931,9 @@ export default function App() {
   const insideFrontBlank = state.specialPages?.insideFront || createInsideFrontCoverPage(state.theme.pageMargins);
   const insideBackBlank = state.specialPages?.insideBack || createInsideBackCoverPage(state.theme.pageMargins);
   const workPageMap = buildWorkFirstPageMapForCatalog(frontCover, insideFrontBlank, innerPages);
-  const summaryPages = summaryPagesFromWorks(
-    state.works,
-    state.theme.pageMargins,
-    workPageMap,
-    state.summaryPageEdits,
-    state.theme.defaultPageBgColor,
-    state.theme.defaultElementBorderPct,
-    state.theme.defaultPageNumberColor,
-    state.pageFormat,
-  );
-  const allEditablePages = [...editablePages, ...editableSpecialPages, ...summaryPages];
-  const renderPagesBase = [frontCover, insideFrontBlank, ...innerPages, insideBackBlank, ...summaryPages, backCover];
+  const worksIndexMarkdown = buildWorksIndexMarkdown(state.works, workPageMap);
+  const allEditablePages = [...editablePages, ...editableSpecialPages];
+  const renderPagesBase = [frontCover, insideFrontBlank, ...innerPages, insideBackBlank, backCover];
   let autoPageCounter = 0;
   const renderPages = renderPagesBase.map((page, idx) => {
     if (!page) return page;
@@ -2036,6 +1962,47 @@ export default function App() {
   }, [currentSpreadIndex, state.currentSpread]);
 
   useEffect(() => {
+    setState((prev) => {
+      let changed = false;
+      const patchTextBlocks = (textBlocks = []) =>
+        textBlocks.map((txt) => {
+          if (txt?.systemTextKey !== "works-index") return txt;
+          if (txt.text === worksIndexMarkdown) return txt;
+          changed = true;
+          return { ...txt, text: worksIndexMarkdown };
+        });
+      const pages = (prev.pages || []).map((page) => {
+        const textBlocks = patchTextBlocks(page.textBlocks || []);
+        const pageChanged = textBlocks.some((txt, idx) => txt !== (page.textBlocks || [])[idx]);
+        return pageChanged ? { ...page, textBlocks } : page;
+      });
+      const insideFront = prev.specialPages?.insideFront
+        ? {
+            ...prev.specialPages.insideFront,
+            textBlocks: patchTextBlocks(prev.specialPages.insideFront.textBlocks || []),
+          }
+        : prev.specialPages?.insideFront;
+      const insideBack = prev.specialPages?.insideBack
+        ? {
+            ...prev.specialPages.insideBack,
+            textBlocks: patchTextBlocks(prev.specialPages.insideBack.textBlocks || []),
+          }
+        : prev.specialPages?.insideBack;
+      return changed
+        ? {
+            ...prev,
+            pages,
+            specialPages: {
+              ...prev.specialPages,
+              insideFront,
+              insideBack,
+            },
+          }
+        : prev;
+    });
+  }, [worksIndexMarkdown]);
+
+  useEffect(() => {
     const prevFormat = prevPageFormatRef.current;
     if (!prevFormat || prevFormat === state.pageFormat) return;
     if (skipNextPageFormatAdjustRef.current) {
@@ -2061,9 +2028,6 @@ export default function App() {
             ? fitPageToNewFormat(prev.specialPages.insideBack)
             : prev.specialPages?.insideBack,
         },
-        summaryPageEdits: Object.fromEntries(
-          Object.entries(prev.summaryPageEdits || {}).map(([id, p]) => [id, fitPageToNewFormat(p)]),
-        ),
       };
     });
     prevPageFormatRef.current = state.pageFormat;
@@ -2117,9 +2081,6 @@ export default function App() {
           insideFront: prev.specialPages?.insideFront ? patchPageElementsBorders(prev.specialPages.insideFront) : prev.specialPages?.insideFront,
           insideBack: prev.specialPages?.insideBack ? patchPageElementsBorders(prev.specialPages.insideBack) : prev.specialPages?.insideBack,
         },
-        summaryPageEdits: Object.fromEntries(
-          Object.entries(prev.summaryPageEdits || {}).map(([id, page]) => [id, patchPageElementsBorders(page)]),
-        ),
       };
     });
   }
@@ -2140,9 +2101,6 @@ export default function App() {
           insideFront: applyMarginsAndNormalize(prev.specialPages?.insideFront),
           insideBack: applyMarginsAndNormalize(prev.specialPages?.insideBack),
         },
-        summaryPageEdits: Object.fromEntries(
-          Object.entries(prev.summaryPageEdits || {}).map(([id, page]) => [id, applyMarginsAndNormalize(page)]),
-        ),
       };
     });
   }
@@ -2155,17 +2113,6 @@ export default function App() {
         const next = typeof updater === "function" ? updater(page) : { ...page, ...updater };
         return next;
       }),
-      summaryPageEdits:
-        String(pageId).startsWith("summary_")
-          ? {
-              ...(prev.summaryPageEdits || {}),
-              [pageId]: (() => {
-                const generatedPage =
-                  summaryPages.find((p) => p.id === pageId) || { id: pageId, textBlocks: [], placements: [], margins: prev.theme?.pageMargins };
-                return typeof updater === "function" ? updater(generatedPage) : { ...generatedPage, ...updater };
-              })(),
-            }
-          : prev.summaryPageEdits,
       specialPages: {
         insideFront:
           prev.specialPages?.insideFront?.id === pageId
@@ -2364,21 +2311,6 @@ export default function App() {
           selectedElement: null,
         };
       }
-      if (String(pageId).startsWith("summary_")) {
-        const remainingPages = prev.pages || [];
-        return {
-          ...prev,
-          summaryPageEdits: {
-            ...(prev.summaryPageEdits || {}),
-            [pageId]: {
-              ...(prev.summaryPageEdits?.[pageId] || {}),
-              deleted: true,
-            },
-          },
-          activePageId: remainingPages[remainingPages.length - 1]?.id || prev.specialPages?.insideBack?.id || prev.specialPages?.insideFront?.id || null,
-          selectedElement: null,
-        };
-      }
       if (prev.specialPages?.insideFront?.id === pageId) {
         return {
           ...prev,
@@ -2399,28 +2331,11 @@ export default function App() {
     });
   }
 
-  function restoreSummaryPage() {
-    patchState((prev) => {
-      const current = prev.summaryPageEdits?.summary_0;
-      if (!current?.deleted) return prev;
-      return {
-        ...prev,
-        summaryPageEdits: {
-          ...(prev.summaryPageEdits || {}),
-          summary_0: {
-            ...current,
-            deleted: false,
-          },
-        },
-      };
-    });
-  }
-
   const activeEditablePage = allEditablePages.find((p) => p.id === state.activePageId) || state.pages[1];
   const selectedWork = state.works.find((w) => w.id === state.selectedWorkId) || null;
 
   function addTextToActivePage() {
-    if (!activeEditablePage || activeEditablePage.type === "summary") return;
+    if (!activeEditablePage) return;
     const bounds = getActivePageLayoutBounds(activeEditablePage);
     const block = createTextBlock("Testo editabile");
     const snapToGrid = !!state.layoutAssist?.snapToGrid;
@@ -2431,6 +2346,28 @@ export default function App() {
     block.bgColor = state.theme?.defaultTextBgColor || block.bgColor || "rgba(255, 255, 255, 0.42)";
     block.w = Math.min(bounds.width, Math.max(120, snapValueToGrid(targetW, snapToGrid, gridSize)));
     block.h = Math.max(minH, snapValueToGrid(Math.max(block.h || 0, minH), snapToGrid, gridSize));
+    block.x = Math.max(0, snapValueToGrid((bounds.width - block.w) / 2, snapToGrid, gridSize));
+    block.y = Math.max(0, snapValueToGrid(bounds.height * 0.08, snapToGrid, gridSize));
+    patchPage(activeEditablePage.id, (page) => ({ ...page, textBlocks: [...page.textBlocks, block] }));
+    patchState((prev) => ({ ...prev, selectedElement: { pageId: activeEditablePage.id, kind: "text", elementId: block.id } }));
+  }
+
+  function addWorksIndexToActivePage() {
+    if (!activeEditablePage) return;
+    const bounds = getActivePageLayoutBounds(activeEditablePage);
+    const block = createTextBlock(worksIndexMarkdown);
+    const snapToGrid = !!state.layoutAssist?.snapToGrid;
+    const gridSize = Math.max(2, state.layoutAssist?.gridSize || 2);
+    block.systemTextKey = "works-index";
+    block.bgColor = state.theme?.defaultTextBgColor || block.bgColor || "rgba(255, 255, 255, 0.42)";
+    block.w = Math.min(bounds.width, Math.max(120, snapValueToGrid(Math.round(bounds.width * 0.9), snapToGrid, gridSize)));
+    block.h = Math.min(
+      bounds.height,
+      Math.max(
+        64,
+        estimateTextBlockHeight(worksIndexMarkdown, block.w, block.fontSize, block.borderWidthPct, state.theme?.titleFontSize || 26),
+      ),
+    );
     block.x = Math.max(0, snapValueToGrid((bounds.width - block.w) / 2, snapToGrid, gridSize));
     block.y = Math.max(0, snapValueToGrid(bounds.height * 0.08, snapToGrid, gridSize));
     patchPage(activeEditablePage.id, (page) => ({ ...page, textBlocks: [...page.textBlocks, block] }));
@@ -2862,7 +2799,7 @@ export default function App() {
   })();
 
   function exportCatalogJson() {
-    const baseName = slugifyFileBaseName(state.projectTitle, "catalogo-opere");
+    const baseName = slugifyFileBaseName(effectiveProjectName, "catalogo-opere");
     const payload = {
       exportedAt: new Date().toISOString(),
       version: 1,
@@ -2897,6 +2834,7 @@ export default function App() {
     setState({
       ...base,
       ...incoming,
+      pageFormat: normalizePageFormatId(incoming.pageFormat, base.pageFormat),
       works: importedWorks,
       selectedElement: null,
       currentSpread: 0,
@@ -2936,6 +2874,7 @@ export default function App() {
       saveProjectsIndex(nextList);
       setSavedProjects(nextList);
       setCurrentProjectId(projectId);
+      setState((prev) => ({ ...prev, projectTitle: trimmed }));
       setProjectDialog({ open: false, mode: "save", name: "" });
     } catch (err) {
       window.alert(`Salvataggio progetto fallito: ${err?.message || "errore locale"}`);
@@ -2947,12 +2886,17 @@ export default function App() {
     setProjectDialog({
       open: true,
       mode,
-      name: existing?.name || `Progetto ${new Date().toLocaleString("it-IT")}`,
+      name: String(state.projectTitle || "").trim() || existing?.name || `Progetto ${new Date().toLocaleString("it-IT")}`,
     });
   }
 
   function saveProjectQuick() {
     const existing = savedProjects.find((p) => p.id === currentProjectId);
+    const preferredName = String(state.projectTitle || "").trim();
+    if (preferredName) {
+      persistProjectByName(preferredName, existing?.id || null);
+      return;
+    }
     if (existing) {
       persistProjectByName(existing.name, existing.id);
       return;
@@ -3065,6 +3009,7 @@ export default function App() {
       setState({
         ...base,
         ...incoming,
+        pageFormat: normalizePageFormatId(incoming.pageFormat, base.pageFormat),
         works: (incoming.works || []).map((w) => ({ ...normalizeWorkData(w), imageUrl: "" })),
         selectedElement: null,
         currentSpread: 0,
@@ -3151,7 +3096,7 @@ export default function App() {
         pdf.addImage(imgData, "PNG", 0, 0, fmt.width, fmt.height);
       }
 
-      const baseName = slugifyFileBaseName(state.projectTitle, "catalogo-book");
+      const baseName = slugifyFileBaseName(effectiveProjectName, "catalogo-book");
       setPrintProgress({ active: true, current: pageEls.length, total: pageEls.length, message: "Salvataggio PDF..." });
       pdf.save(`${baseName || "catalogo-book"}.pdf`);
     } catch (err) {
@@ -3294,8 +3239,30 @@ export default function App() {
               ariaLabel="Spread precedente"
               onClick={() => patchState((p) => ({ ...p, currentSpread: Math.max(0, p.currentSpread - 1) }))}
             />
-            <span className="toolbar-badge" title={`Spread ${currentSpreadIndex + 1} di ${Math.max(spreads.length, 1)}`}>
-              {currentSpreadIndex + 1}/{Math.max(spreads.length, 1)}
+            <IconButton
+              icon="chevronRight"
+              title="Spread successivo"
+              ariaLabel="Spread successivo"
+              onClick={() =>
+                patchState((p) => ({ ...p, currentSpread: Math.min(spreads.length - 1, p.currentSpread + 1) }))
+              }
+            />
+            <span className="toolbar-badge toolbar-page-jump" title={`Spread ${currentSpreadIndex + 1} di ${Math.max(spreads.length, 1)}`}>
+              <input
+                className="toolbar-page-input"
+                type="number"
+                min="1"
+                max={Math.max(spreads.length, 1)}
+                value={currentSpreadIndex + 1}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  if (!Number.isFinite(next)) return;
+                  const idx = clampNum(Math.round(next) - 1, 0, Math.max(0, spreads.length - 1));
+                  patchState((p) => ({ ...p, currentSpread: idx }));
+                }}
+                aria-label="Vai allo spread"
+              />
+              <small>/ {Math.max(spreads.length, 1)}</small>
             </span>
             <IconButton icon="plus" title="Aggiungi pagina" ariaLabel="Aggiungi pagina" onClick={addInnerPage} />
             <button
@@ -3307,14 +3274,6 @@ export default function App() {
               <Icon name="layout" />
               Layout
             </button>
-            <IconButton
-              icon="chevronRight"
-              title="Spread successivo"
-              ariaLabel="Spread successivo"
-              onClick={() =>
-                patchState((p) => ({ ...p, currentSpread: Math.min(spreads.length - 1, p.currentSpread + 1) }))
-              }
-            />
             <button
               className={`icon-btn ${state.layoutAssist?.distributeRespectMargins ? "active-toggle" : ""}`}
               onClick={() =>
@@ -3419,6 +3378,7 @@ export default function App() {
               />
             </label>
             <IconButton icon="text" onClick={addTextToActivePage} title="Aggiungi testo" ariaLabel="Aggiungi testo" />
+            <IconButton icon="list" onClick={addWorksIndexToActivePage} title="Aggiungi elenco opere" ariaLabel="Aggiungi elenco opere" />
             <IconButton icon="image" onClick={addSelectedWorkToActivePage} disabled={!selectedWork} title="Aggiungi opera selezionata" ariaLabel="Aggiungi opera selezionata" />
             <IconButton icon="fit" onClick={normalizeActivePageNow} title="Riporta elementi dentro vincoli" ariaLabel="Riporta dentro" />
             <IconButton icon="trash" onClick={deleteSelectedElement} disabled={!state.selectedElement} title="Elimina elemento selezionato" ariaLabel="Elimina elemento" />
@@ -3505,11 +3465,6 @@ export default function App() {
                   onChange={(patch) => patchPage(activeEditablePage.id, (p) => ({ ...p, ...patch }))}
                   onDeletePage={() => removePage(activeEditablePage.id)}
                 />
-                {!!state.summaryPageEdits?.summary_0?.deleted && (
-                  <button className="small-btn" onClick={restoreSummaryPage}>
-                    Ripristina sommario
-                  </button>
-                )}
                 <div className="stack-fields">
                   <label>Opere nella pagina</label>
                   {activePageWorks.length ? (
@@ -3794,6 +3749,7 @@ function Icon({ name }) {
     distributeBounds: <svg {...common}><path d="M4 6h16M4 18h16" /><path d="M7 9v6M12 7v10M17 9v6" /></svg>,
     spreadMode: <svg {...common}><path d="M3.5 6h8v12h-8zM12.5 6h8v12h-8z" /><path d="M12 6v12" /></svg>,
     text: <svg {...common}><path d="M5 6h14M12 6v12M8.5 18h7" /></svg>,
+    list: <svg {...common}><path d="M8 7h12M8 12h12M8 17h12" /><circle cx="4.5" cy="7" r="1" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="4.5" cy="17" r="1" fill="currentColor" stroke="none" /></svg>,
     image: <svg {...common}><rect x="4" y="5" width="16" height="14" rx="1.5" /><path d="m7 15 3.2-3.3 2.7 2.7 2.1-2.2L18 15" /><circle cx="9" cy="9" r="1.2" /></svg>,
     fit: <svg {...common}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>,
     trash: <svg {...common}><path d="M4 7h16M9 7V5h6v2M8 7l.7 12h6.6L16 7" /></svg>,
@@ -3822,7 +3778,7 @@ function HelpOverlay({ onClose }) {
     ["Griglia", "Snap griglia"],
     ["Guide", "Guide magnetiche"],
     ["Vincoli", "Margini / pagina intera"],
-    ["T / Immagine", "Aggiungi testo / opera selezionata"],
+    ["T / Elenco / Immagine", "Aggiungi testo / elenco opere / opera selezionata"],
     ["Fit", "Riporta dentro i vincoli"],
     ["Cestino", "Elimina elemento selezionato"],
   ];
@@ -3918,7 +3874,14 @@ function LayoutPanel({
         <button className="ghost-btn" onClick={onApplyActivePage} disabled={!hasActivePage || !hasWorks}>
           Applica alla pagina attiva
         </button>
-        <button className="primary-btn" onClick={onGenerateCatalog} disabled={!hasWorks}>
+        <button
+          className="primary-btn"
+          onClick={async () => {
+            await onGenerateCatalog?.();
+            onClose?.();
+          }}
+          disabled={!hasWorks}
+        >
           Genera pagine dal catalogo
         </button>
       </div>
@@ -4032,19 +3995,11 @@ function ThemePanel({ theme, onChange, onMarginsChange, onClose }) {
         />
       </label>
       <label>
-        Template Sintesi Retro (MD)
+        Template Retrocopertina (Sintesi + Biografia) (MD)
         <textarea
-          rows={6}
-          value={theme.defaultBackSummaryMd || DEFAULT_BACK_SUMMARY_MD}
-          onChange={(e) => onChange({ defaultBackSummaryMd: e.target.value })}
-        />
-      </label>
-      <label>
-        Template Biografia Retro (MD)
-        <textarea
-          rows={10}
-          value={theme.defaultBackBioMd || DEFAULT_BACK_BIO_MD}
-          onChange={(e) => onChange({ defaultBackBioMd: e.target.value })}
+          rows={14}
+          value={theme.defaultBackCoverMd || getDefaultBackCoverMd(theme)}
+          onChange={(e) => onChange({ defaultBackCoverMd: e.target.value })}
         />
       </label>
       <div className="grid-2">
@@ -4150,6 +4105,39 @@ function ElementInspector({ kind, data, onChange }) {
           onChange={(e) => onChange({ captionOverride: e.target.value })}
           placeholder="Se vuoto usa didascalia automatica (titolo, autore, anno)"
         />
+      </label>
+      <RangeField
+        label="Font size"
+        min={10}
+        max={42}
+        value={data.captionFontSize || data.fontSize || 16}
+        onChange={(v) => onChange({ captionFontSize: v })}
+      />
+      <RangeField
+        label="Peso"
+        min={300}
+        max={800}
+        step={100}
+        value={data.captionFontWeight || data.fontWeight || 500}
+        onChange={(v) => onChange({ captionFontWeight: v })}
+      />
+      <label>
+        Colore
+        <input type="color" value={data.captionColor || data.color || "#1f1f1f"} onChange={(e) => onChange({ captionColor: e.target.value })} />
+      </label>
+      <ColorAlphaField
+        label="Sfondo didascalia"
+        value={data.captionBgColor || data.bgColor || "rgba(255, 255, 255, 0.42)"}
+        fallback="rgba(255, 255, 255, 0.42)"
+        onChange={(color) => onChange({ captionBgColor: color })}
+      />
+      <label>
+        Allineamento
+        <select value={data.captionAlign || data.align || "left"} onChange={(e) => onChange({ captionAlign: e.target.value })}>
+          <option value="left">Sinistra</option>
+          <option value="center">Centro</option>
+          <option value="right">Destra</option>
+        </select>
       </label>
       <RangeField label="Bordo immagine %" min={0} max={20} value={data.borderWidthPct ?? 5} onChange={(v) => onChange({ borderWidthPct: v })} />
       <label>
@@ -5170,6 +5158,17 @@ function PageCanvas({
                         ),
                         zIndex: isSelected ? layerZ + 1001 : layerZ + 1,
                         pointerEvents: captionLockedOut ? "none" : "auto",
+                        color: placement.captionColor || theme.textColor,
+                        background: placement.captionBgColor || theme.defaultTextBgColor || "rgba(255, 255, 255, 0.42)",
+                        fontSize: `${Math.max(1, Math.round((placement.captionFontSize || theme.bodyFontSize) * pageScale))}px`,
+                        fontWeight: placement.captionFontWeight || theme.fontWeight,
+                        textAlign: placement.captionAlign || "left",
+                        alignItems:
+                          (placement.captionAlign || "left") === "center"
+                            ? "center"
+                            : (placement.captionAlign || "left") === "right"
+                              ? "flex-end"
+                              : "flex-start",
                         border: `${capBorderPx}px solid ${placement.captionBorderColor || "#ffffff"}`,
                       }}
                       onPointerDown={(e) =>

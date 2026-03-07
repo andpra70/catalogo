@@ -6,7 +6,7 @@ Consente di:
 - importare immagini e metadati opere
 - impaginare opere e testi su pagine
 - gestire copertina / retrocopertina / pagine speciali
-- generare pagine finali `Elenco opere`
+- aggiungere un blocco testo `Elenco opere` auto-aggiornato
 - esportare/importare JSON
 - stampare/esportare PDF tramite `window.print()`
 
@@ -83,16 +83,13 @@ docker run --rm -p 6063:6063 catalogo-opere
 - Copertina editabile
 - Seconda di copertina (credits) editabile
 - Terza di copertina editabile
-- Retrocopertina editabile (sintesi, bio autore, codice edizione)
+- Retrocopertina editabile (blocco testo unico con sintesi + bio autore)
 
-### Elenco opere (pagine finali)
+### Elenco opere (tool testo)
 
-- Numero pagine generato automaticamente in base alle opere
-- Lista con:
-  - `Titolo - Autore - Anno`
-  - `pag. N` (pagina dove compare l’opera)
-- Elementi testo editabili (`titolo elenco` + `lista`)
-- Comando `Rigenera elenco opere` nel menu overflow
+- Tool in toolbar `Aggiungi elenco opere`
+- Inserisce nella pagina attiva una normale casella testo markdown
+- Contenuto auto-aggiornato con opere inserite nelle pagine e numero pagina (`pag. N`)
 
 ## Tema catalogo
 
@@ -121,12 +118,11 @@ Dal menu overflow (`⋯`) in topbar:
 
 - `Esporta JSON`
 - `Importa JSON`
-- `Rigenera elenco opere`
 - `Stampa / PDF Catalogo`
 
 ### PDF / Stampa
 
-La stampa usa il formato pagina scelto (A4 / quadrato / orizzontale) e renderizza le pagine singole del catalogo.
+La stampa usa il formato pagina scelto (A4, orizzontale, quadrati 20x20 / 21x21 / 24x24 / 30x30) e renderizza le pagine singole del catalogo.
 
 Per ottenere un PDF più fedele:
 - abilita “grafica di sfondo / background graphics” nel dialogo di stampa del browser
@@ -149,5 +145,5 @@ Questo evita errori di quota dovuti a immagini Base64 in `localStorage`.
 ## Note
 
 - Le pagine `spacer` tecniche non sono editabili.
-- Le pagine `Elenco opere` sono generate automaticamente ma supportano override manuali (testi editabili).
+- L'elenco opere è un blocco testo standard con markdown generato automaticamente.
 - Alcune impostazioni del tema (es. sfondo pagina default, bordo elementi default) propagano le modifiche a tutte le pagine/elementi esistenti.
