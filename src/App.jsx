@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import sampleProjectPayload from "./sample/sample.json";
 
-const STORAGE_KEY = "catalogo-opere-state-v1";
 const PROJECTS_INDEX_KEY = "catalogo-opere-projects-index-v1";
 const PROJECT_STORAGE_PREFIX = "catalogo-opere-project:";
 const THEMES_INDEX_KEY = "catalogo-opere-themes-index-v1";
 const THEME_STORAGE_PREFIX = "catalogo-opere-theme:";
 const IMAGE_DB_NAME = "catalogo-opere-assets";
 const IMAGE_STORE_NAME = "images";
+const WORK_DRAG_MIME = "application/x-catalog-work-id";
+const WORK_DRAG_MIME_ALT = "text/x-catalog-work-id";
+const WORK_DRAG_TEXT = "text/plain";
+const WORK_DRAG_TEXT_PREFIX = "catalog-work:";
+const PLACEMENT_DRAG_MIME = "application/x-catalog-placement";
 const DEFAULT_PREFACE_BODY_MD =
   "# Prefazione\n\nQuesto catalogo raccoglie una selezione di opere con una sequenza pensata per accompagnare la lettura tra immagini, ritmo di pagina e apparati testuali.\n\n## Linea curatoriale\n- relazione tra *materia* e luce\n- dialogo tra archivio e presente\n- attenzione al ritmo visivo di pagina\n\n> Questo testo e un template: sostituiscilo con la prefazione definitiva.";
 const DEFAULT_THANKS_BODY_MD =
@@ -21,6 +25,7 @@ const DEFAULT_BACK_BIO_MD =
 const DEFAULT_BACK_COVER_MD = `${DEFAULT_BACK_SUMMARY_MD}\n\n${DEFAULT_BACK_BIO_MD}`;
 const DEFAULT_INTRO_CURATORIAL_MD =
   "# Introduzione\nQuesto catalogo nasce come strumento di lettura e di lavoro: non solo una raccolta di immagini, ma un percorso tra opere, materiali e relazioni.\n\n## Intento editoriale\nLa sequenza delle pagine costruisce una progressione che alterna visione ravvicinata e visione d'insieme, con l'obiettivo di valorizzare ritmo, pause e contrasti.\n\n### Obiettivi\n- restituire il contesto di produzione delle opere\n- evidenziare continuita e differenze tra i cicli\n- offrire una consultazione chiara per studio, archivio e presentazione\n\n## Testo curatoriale\nLa selezione propone un attraversamento tematico tra **materia**, *luce* e memoria visiva. Ogni nucleo mette in dialogo immagini con scale differenti, affinita formali e scarti narrativi.\n\n### Chiavi di lettura\n1. rapporto tra superficie e profondita\n2. tensione tra documento e interpretazione\n3. costruzione di una grammatica visiva coerente\n\n> Nota: questo testo e un template di base. Personalizzalo con riferimenti puntuali a mostra, opere e cronologia.\n\nPer approfondimenti critici: [scheda progetto](https://example.com).";
+const DEFAULT_CAPTION_TEMPLATE = "{{titolo}} {{autore}} {{dimensioni}} {{anno}}";
 const DEFAULT_THEME_FONT = "'Archivo', sans-serif";
 const DEFAULT_PAGE_FORMAT_ID = "a6-portrait";
 const DEFAULT_THEME_MARGINS = { top: 15, right: 15, bottom: 15, left: 15 };
@@ -87,6 +92,27 @@ const WORK_FIELDS = [
   ["location", "Collocazione"],
   ["notes", "Note"],
 ];
+
+const CAPTION_PLACEHOLDER_TO_WORK_FIELD = {
+  titolo: "title",
+  title: "title",
+  autore: "author",
+  author: "author",
+  anno: "year",
+  year: "year",
+  tipo: "type",
+  type: "type",
+  tecnica: "technique",
+  technique: "technique",
+  dimensioni: "dimensions",
+  dimensions: "dimensions",
+  inventario: "inventory",
+  inventory: "inventory",
+  collocazione: "location",
+  location: "location",
+  note: "notes",
+  notes: "notes",
+};
 
 const PAGE_FORMATS = [
   { id: "a4-portrait", label: "A4 Verticale", width: 210, height: 297 },
@@ -571,6 +597,7 @@ function createDefaultState(themeSeed = null) {
     uiTint: "#f5f5f5",
     paperShadow: "rgba(0, 0, 0, 0.10)",
     autoShowCaptionDefault: true,
+    defaultCaptionTemplate: DEFAULT_CAPTION_TEMPLATE,
     defaultPageBgColor: "#ffffff",
     defaultCoverBgColor: "#ffffff",
     defaultImageBorderPct: 3,
@@ -895,65 +922,92 @@ async function idbDeleteImage(imageId) {
 }
 
 function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return createDefaultState();
-    const parsed = JSON.parse(raw);
-    const base = createDefaultState();
-    const theme = {
-      ...base.theme,
-      ...(parsed.theme || {}),
-      pageMargins: {
-        ...base.theme.pageMargins,
-        ...(parsed.theme?.pageMargins || {}),
-      },
-    };
-    const baseSpecial = base.specialPages || {};
-    const parsedSpecial = parsed.specialPages || {};
-    return {
-      ...base,
-      ...parsed,
-      pageFormat: normalizePageFormatId(parsed.pageFormat, base.pageFormat),
-      theme,
-      specialPages: {
-        insideFront: {
-          ...baseSpecial.insideFront,
-          ...(parsedSpecial.insideFront || {}),
-          margins: { ...theme.pageMargins, ...(parsedSpecial.insideFront?.margins || baseSpecial.insideFront?.margins || {}) },
-        },
-        insideBack: {
-          ...baseSpecial.insideBack,
-          ...(parsedSpecial.insideBack || {}),
-          margins: { ...theme.pageMargins, ...(parsedSpecial.insideBack?.margins || baseSpecial.insideBack?.margins || {}) },
-        },
-      },
-      pages: (parsed.pages || base.pages).map((p) => ({
-        ...p,
-        systemPageKey:
-          p?.systemPageKey ||
-          (p?.type === "page" && p?.title === "Prefazione"
-            ? "preface"
-            : p?.type === "page" && ((p?.textBlocks || []).some((txt) => txt?.systemTextKey === "works-index") || p?.title === "Elenco opere")
-              ? "works-index"
-              : p?.type === "page" && p?.title === "Pagina 1"
-                ? "intro"
-                : undefined),
-        margins: { ...theme.pageMargins, ...(p?.margins || {}) },
-      })),
-      works: (parsed.works || []).map((w) => ({ ...normalizeWorkData(w), imageUrl: "" })),
-    };
-  } catch {
-    return createDefaultState();
-  }
+  return createDefaultState();
 }
 
 function workLabel(work) {
   return work.title?.trim() || work.inventory?.trim() || "Opera senza titolo";
 }
 
-function defaultPlacementCaption(placement, work) {
+function resolveCaptionTemplate(themeCfg) {
+  const template = String(themeCfg?.defaultCaptionTemplate || "").trim();
+  return template || DEFAULT_CAPTION_TEMPLATE;
+}
+
+function renderWorkCaptionTemplate(work, themeCfg = null) {
+  const template = resolveCaptionTemplate(themeCfg);
+  const text = template.replace(/\{\{\s*([^}]+)\s*\}\}/g, (full, placeholderRaw) => {
+    const placeholderKey = String(placeholderRaw || "").trim().toLowerCase();
+    const fieldKey = CAPTION_PLACEHOLDER_TO_WORK_FIELD[placeholderKey];
+    if (!fieldKey) return full;
+    const value = work?.[fieldKey];
+    return value == null ? "" : String(value).trim();
+  });
+  return text
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function defaultPlacementCaption(placement, work, themeCfg = null) {
   if (placement?.captionOverride?.trim()) return placement.captionOverride;
-  return [workLabel(work), [work?.author, work?.year].filter(Boolean).join(", ")].filter(Boolean).join("\n");
+  return renderWorkCaptionTemplate(work, themeCfg);
+}
+
+function dataTransferTypesToArray(dataTransferTypes) {
+  if (!dataTransferTypes) return [];
+  if (Array.isArray(dataTransferTypes)) return dataTransferTypes;
+  if (typeof dataTransferTypes[Symbol.iterator] === "function") return [...dataTransferTypes];
+  const list = [];
+  const len = Math.max(0, Number(dataTransferTypes.length) || 0);
+  for (let i = 0; i < len; i += 1) {
+    const item = dataTransferTypes[i];
+    if (typeof item === "string") list.push(item);
+  }
+  return list;
+}
+
+function hasDraggedWorkType(dataTransferTypes) {
+  const types = dataTransferTypesToArray(dataTransferTypes);
+  return (
+    types.includes(WORK_DRAG_MIME) ||
+    types.includes(WORK_DRAG_MIME_ALT) ||
+    types.includes(WORK_DRAG_TEXT) ||
+    types.includes("text") ||
+    types.includes("application/json") ||
+    types.includes("text/uri-list")
+  );
+}
+
+function extractDraggedWorkId(dataTransfer) {
+  const read = (mime) => String(dataTransfer?.getData?.(mime) || "").trim();
+  const jsonRaw = read("application/json");
+  if (jsonRaw) {
+    try {
+      const parsed = JSON.parse(jsonRaw);
+      const parsedId = String(parsed?.id || "").trim();
+      if (parsed?.type === "catalog-work" && parsedId) return parsedId;
+    } catch {
+      // ignore invalid json payload
+    }
+  }
+  const candidates = [
+    read(WORK_DRAG_MIME),
+    read(WORK_DRAG_MIME_ALT),
+    read(WORK_DRAG_TEXT),
+    read("text"),
+    read("Text"),
+    read("text/uri-list"),
+  ];
+  for (const raw of candidates) {
+    if (!raw) continue;
+    if (raw.startsWith(WORK_DRAG_TEXT_PREFIX)) return raw.slice(WORK_DRAG_TEXT_PREFIX.length).trim();
+    return raw;
+  }
+  return "";
 }
 
 function buildWorksIndexMarkdown(works, workPageMap = new Map()) {
@@ -964,11 +1018,11 @@ function buildWorksIndexMarkdown(works, workPageMap = new Map()) {
   if (!insertedWorks.length) return "# Elenco opere\n\nNessuna opera inserita nelle pagine.";
 
   insertedWorks.sort((a, b) => a.pageNo - b.pageNo || a.order - b.order);
-  const entries = insertedWorks.map(({ work, pageNo }, idx) => {
+  const entries = insertedWorks.map(({ work, pageNo }) => {
     const title = workLabel(work);
     const author = work.author?.trim() || "n/d";
     const year = work.year?.trim() || "n/d";
-    return `${idx + 1}. **${title}** — *${author}* — anno: ${year} — **pag. ${pageNo}**`;
+    return `- **pag. ${pageNo}** — **${title}** — *${author}* — anno: ${year}`;
   });
   return `# Elenco opere\n\n${entries.join("\n")}`;
 }
@@ -1201,14 +1255,6 @@ function buildBookSpreads(pages) {
   return spreads;
 }
 
-function buildTechnicalSpreads(pages) {
-  const arr = [];
-  for (let i = 0; i < pages.length; i += 2) {
-    arr.push([pages[i] || null, pages[i + 1] || null]);
-  }
-  return arr;
-}
-
 function cloneWorkDraft(work) {
   const base = {
     id: uid("work"),
@@ -1299,31 +1345,31 @@ function createAutoWorkPageFromImageAspect(work, pageFormatId, aspectRatio, boun
   const areaH = bounds.height;
   const captionGap = 8;
   const safeAspect = Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 1;
-  const title = workLabel(work);
-  const meta = [work.author, work.year].filter(Boolean).join(", ");
-  const oneLineCaption = [title, meta].filter(Boolean).join(" — ");
-
-  // Stima semplice per scegliere una didascalia più compatta quando possibile.
-  const approxCharsPerLine = Math.max(18, Math.floor(areaW / 7.2));
-  const preferOneLine = oneLineCaption.length <= approxCharsPerLine && safeAspect >= 1;
-  const captionOverride = preferOneLine ? oneLineCaption : [title, meta].filter(Boolean).join("\n");
-  const captionH = preferOneLine ? 36 : oneLineCaption.length > approxCharsPerLine * 1.6 ? 62 : 52;
+  const captionOverride = renderWorkCaptionTemplate(work);
+  const captionH = captionOverride
+    ? Math.max(24, Math.round(estimateCaptionHeight(captionOverride, Math.max(80, areaW), 16)))
+    : 5;
+  const captionFootprint = captionOverride ? captionH + captionGap : 0;
   const maxImageW = Math.max(60, areaW);
-  const maxImageH = Math.max(60, areaH - captionH - captionGap);
+  const maxImageH = Math.max(60, areaH - captionFootprint);
 
   const fitted = fitImageMmToBox(work, null, maxImageW, maxImageH, safeAspect);
   const w = clampNum(Math.round(fitted.w), 60, maxImageW);
   const h = clampNum(Math.round(fitted.h), 60, maxImageH);
 
   const x = Math.round((areaW - w) / 2);
-  const y = Math.max(6, Math.round((areaH - h - captionH - captionGap) / 2));
+  const y = Math.max(6, Math.round((areaH - h - captionFootprint) / 2));
   const placement = createPlacementForWork(work.id, x, y);
   placement.w = w;
   placement.h = h;
   placement.captionW = Math.min(areaW, Math.max(160, Math.round(w)));
-  placement.captionH = captionH;
+  placement.captionH = captionOverride ? captionH : 5;
   placement.captionX = Math.round((areaW - placement.captionW) / 2);
-  placement.captionY = clampNum(y + h + captionGap, 0, Math.max(0, areaH - captionH));
+  placement.captionY = clampNum(
+    y + h + (captionOverride ? captionGap : 0),
+    0,
+    Math.max(0, areaH - (captionOverride ? captionH : 5)),
+  );
   placement.captionOverride = captionOverride;
   page.placements = [placement];
   return page;
@@ -1539,19 +1585,55 @@ function fitAspectRatioToBox(aspectRatio, maxW, maxH) {
   };
 }
 
+function resolveSizeWithRatio(desiredW, desiredH, ratio, minW, maxW, minH, maxH) {
+  const safeRatio = Number.isFinite(Number(ratio)) && Number(ratio) > 0 ? Number(ratio) : 1;
+  const clampByWidth = (width) => {
+    let w = clampNum(width, minW, maxW);
+    let h = w / safeRatio;
+    if (h < minH) {
+      h = minH;
+      w = h * safeRatio;
+    } else if (h > maxH) {
+      h = maxH;
+      w = h * safeRatio;
+    }
+    w = clampNum(w, minW, maxW);
+    h = clampNum(h, minH, maxH);
+    return { w, h };
+  };
+  const clampByHeight = (height) => {
+    let h = clampNum(height, minH, maxH);
+    let w = h * safeRatio;
+    if (w < minW) {
+      w = minW;
+      h = w / safeRatio;
+    } else if (w > maxW) {
+      w = maxW;
+      h = w / safeRatio;
+    }
+    w = clampNum(w, minW, maxW);
+    h = clampNum(h, minH, maxH);
+    return { w, h };
+  };
+
+  const byW = clampByWidth(desiredW);
+  const byH = clampByHeight(desiredH);
+  const scoreW = Math.abs(byW.w - desiredW) + Math.abs(byW.h - desiredH);
+  const scoreH = Math.abs(byH.w - desiredW) + Math.abs(byH.h - desiredH);
+  return scoreW <= scoreH ? byW : byH;
+}
+
 function buildPlacementCaptionForWork(work, slotW, aspectRatio, themeCfg) {
   const showCaption = themeCfg?.autoShowCaptionDefault ?? true;
-  const title = workLabel(work);
-  const meta = [work?.author, work?.year].filter(Boolean).join(", ");
-  const inline = [title, meta].filter(Boolean).join(" — ");
   if (!showCaption) {
     return { showCaption: false, text: "", h: 5, gap: 0 };
   }
-  const approxChars = Math.max(18, Math.floor(Math.max(120, slotW || 0) / 7.4));
-  const preferOneLine = inline.length <= approxChars && aspectRatio >= 0.85;
-  const text = preferOneLine ? inline : [title, meta].filter(Boolean).join("\n");
+  const text = renderWorkCaptionTemplate(work, themeCfg);
   const captionFontSize = Number(themeCfg?.captionFontSize) || Number(themeCfg?.bodyFontSize) || 16;
-  const h = Math.max(5, estimateCaptionHeight(text, Math.max(5, slotW || 0), captionFontSize));
+  const slotWidth = Math.max(5, slotW || 0);
+  const isVerticalImage = Number.isFinite(Number(aspectRatio)) && Number(aspectRatio) < 0.66;
+  const measureWidth = isVerticalImage ? Math.max(5, slotWidth * 0.92) : slotWidth;
+  const h = text ? Math.max(5, estimateCaptionHeight(text, measureWidth, captionFontSize)) : 5;
   return {
     showCaption: true,
     text,
@@ -2304,14 +2386,13 @@ export default function App() {
   const [themeOpen, setThemeOpen] = useState(false);
   const [themePanelTab, setThemePanelTab] = useState("typography");
   const [templateOpen, setTemplateOpen] = useState(false);
-  const [dragDropActive, setDragDropActive] = useState(false);
-  const [persistWarning, setPersistWarning] = useState("");
   const importJsonRef = useRef(null);
   const [bookView, setBookView] = useState({ zoom: 1, panX: 0, panY: 0 });
   const [topbarMenuOpen, setTopbarMenuOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [layoutPanelOpen, setLayoutPanelOpen] = useState(false);
   const [selectedLayoutPreset, setSelectedLayoutPreset] = useState("masonry");
+  const [draggingWorkId, setDraggingWorkId] = useState(null);
   const topbarActionsRef = useRef(null);
   const templatePanelRef = useRef(null);
   const elementClipboardRef = useRef(null);
@@ -2348,18 +2429,14 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitizeStateForStorage(state)));
-      if (persistWarning) setPersistWarning("");
-    } catch (err) {
-      const isQuota = err instanceof DOMException && err.name === "QuotaExceededError";
-      setPersistWarning(
-        isQuota
-          ? "Salvataggio locale pieno: layout salvato parzialmente. Riduci testi/stato o esporta JSON."
-          : "Errore nel salvataggio locale.",
-      );
-    }
-  }, [state]);
+    const clearDragWork = () => setDraggingWorkId(null);
+    window.addEventListener("dragend", clearDragWork);
+    window.addEventListener("drop", clearDragWork);
+    return () => {
+      window.removeEventListener("dragend", clearDragWork);
+      window.removeEventListener("drop", clearDragWork);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -2429,10 +2506,7 @@ export default function App() {
     };
   });
 
-  const spreads = useMemo(
-    () => (state.bookViewMode === "technical" ? buildTechnicalSpreads(renderPages) : buildBookSpreads(renderPages)),
-    [renderPages, state.bookViewMode],
-  );
+  const spreads = useMemo(() => buildBookSpreads(renderPages), [renderPages]);
 
   const currentSpreadIndex = Math.min(state.currentSpread, Math.max(spreads.length - 1, 0));
   const currentSpread = spreads[currentSpreadIndex] || [null, null];
@@ -2701,15 +2775,12 @@ export default function App() {
     patchState((prev) => {
       const exists = prev.works.some((w) => w.id === incoming.id);
       const works = exists ? prev.works.map((w) => (w.id === incoming.id ? incoming : w)) : [...prev.works, incoming];
-      const nextLine = [incoming?.author, incoming?.year].filter(Boolean).join(", ");
-      const nextCaptionMultiline = [workLabel(incoming), nextLine].filter(Boolean).join("\n").trim();
-      const nextCaptionInline = [workLabel(incoming), nextLine].filter(Boolean).join(" — ").trim();
+      const nextCaptionText = renderWorkCaptionTemplate(incoming, prev.theme);
       const patchPlacementCaption = (placement) => {
         if (!placement || placement.workId !== incoming.id) return placement;
         const current = String(placement.captionOverride || "").trim();
         if (!current) return placement;
-        const wantsInline = !current.includes("\n");
-        return { ...placement, captionOverride: wantsInline ? nextCaptionInline : nextCaptionMultiline };
+        return { ...placement, captionOverride: nextCaptionText };
       };
       const patchPageCaptions = (page) => {
         if (!page?.placements?.length) return page;
@@ -2796,22 +2867,11 @@ export default function App() {
     });
   }
 
-  async function onFrameDrop(e) {
+  function preventBookFileDrop(e) {
+    const types = dataTransferTypesToArray(e.dataTransfer?.types);
+    if (!types.includes("Files")) return;
     e.preventDefault();
-    setDragDropActive(false);
-    if (e.dataTransfer?.files?.length) {
-      await handleDropFiles(e.dataTransfer.files);
-    }
-  }
-
-  function onFrameDragOver(e) {
-    e.preventDefault();
-    if (!dragDropActive) setDragDropActive(true);
-  }
-
-  function onFrameDragLeave(e) {
-    if (e.currentTarget.contains(e.relatedTarget)) return;
-    setDragDropActive(false);
+    e.stopPropagation();
   }
 
   function selectPage(page) {
@@ -2845,7 +2905,7 @@ export default function App() {
       const insideBack = prev.specialPages?.insideBack || null;
       const inner = next.slice(1, -1).map((page) => ({ ...page, title: page.title || "Pagina" }));
       const renderPages = [next[0], insideFront, ...inner, insideBack, next[next.length - 1]];
-      const nextSpreads = prev.bookViewMode === "technical" ? buildTechnicalSpreads(renderPages) : buildBookSpreads(renderPages);
+      const nextSpreads = buildBookSpreads(renderPages);
       const spreadIdx = Math.max(0, nextSpreads.findIndex((spread) => spread.some((page) => page?.id === newPage.id)));
       return { ...prev, pages: next, activePageId: newPage.id, currentSpread: spreadIdx };
     });
@@ -3136,6 +3196,7 @@ export default function App() {
     const page = allEditablePages.find((p) => p.id === pageId);
     if (!page || page.type === "summary") return;
     const work = state.works.find((w) => w.id === workId);
+    if (!work) return;
     const bounds = getActivePageLayoutBounds(page);
     const safeX = clampNum(Math.round(x), 0, Math.max(0, bounds.width - 1));
     const safeY = clampNum(Math.round(y), 0, Math.max(0, bounds.height - 1));
@@ -3543,6 +3604,7 @@ export default function App() {
     setState({
       ...base,
       ...incoming,
+      bookViewMode: "real",
       pageFormat: normalizePageFormatId(incoming.pageFormat, base.pageFormat),
       works: importedWorks,
       selectedElement: null,
@@ -3724,6 +3786,7 @@ export default function App() {
       setState({
         ...base,
         ...incoming,
+        bookViewMode: "real",
         pageFormat: normalizePageFormatId(incoming.pageFormat, base.pageFormat),
         works: (incoming.works || []).map((w) => ({ ...normalizeWorkData(w), imageUrl: "" })),
         selectedElement: null,
@@ -3848,7 +3911,7 @@ export default function App() {
 
   return (
     <div
-      className={`app-shell ${dragDropActive ? "drag-active" : ""}`}
+      className="app-shell"
       style={{
         "--theme-font": state.theme.fontFamily,
         "--accent-color": state.theme.accentColor,
@@ -3860,9 +3923,8 @@ export default function App() {
         "--print-page-h-mm": `${currentFormat.height}mm`,
         fontFamily: state.theme.fontFamily,
       }}
-      onDrop={onFrameDrop}
-      onDragOver={onFrameDragOver}
-      onDragLeave={onFrameDragLeave}
+      onDragOver={preventBookFileDrop}
+      onDrop={preventBookFileDrop}
     >
       <header className="topbar">
         <div className="topbar-main">
@@ -3877,7 +3939,6 @@ export default function App() {
                 placeholder="Titolo progetto"
               />
             </div>
-            {persistWarning && <p className="warn-text">{persistWarning}</p>}
           </div>
           <div ref={topbarActionsRef} className="topbar-actions">
             <IconButton icon="help" onClick={() => setHelpOpen((v) => !v)} title="Guida icone" ariaLabel="Guida icone" />
@@ -4009,20 +4070,6 @@ export default function App() {
             >
               <Icon name="distributeBounds" />
             </button>
-            <button
-              className={`icon-btn ${state.bookViewMode === "real" ? "active-toggle" : ""}`}
-              onClick={() =>
-                patchState((p) => ({
-                  ...p,
-                  bookViewMode: p.bookViewMode === "real" ? "technical" : "real",
-                  currentSpread: 0,
-                }))
-              }
-              title={state.bookViewMode === "real" ? "Vista libro reale" : "Vista impaginazione tecnica"}
-              aria-label="Modalità spread"
-            >
-              <Icon name="spreadMode" />
-            </button>
             <IconButton icon="minus" onClick={() => setBookView((v) => ({ ...v, zoom: Math.max(0.4, +(v.zoom - 0.1).toFixed(2)) }))} title="Zoom out" ariaLabel="Zoom out" />
             <span className="zoom-readout">{Math.round(bookView.zoom * 100)}%</span>
             <IconButton icon="plus" onClick={() => setBookView((v) => ({ ...v, zoom: Math.min(3, +(v.zoom + 0.1).toFixed(2)) }))} title="Zoom in" ariaLabel="Zoom in" />
@@ -4080,26 +4127,9 @@ export default function App() {
             >
               <Icon name="bounds" />
             </button>
-            <label className="inline-mini">
-              G
-              <input
-                type="number"
-                min="4"
-                max="48"
-                step="2"
-                value={state.layoutAssist?.gridSize ?? 2}
-                onChange={(e) =>
-                  patchState((p) => ({
-                    ...p,
-                    layoutAssist: { ...p.layoutAssist, gridSize: Math.max(2, Number(e.target.value) || 2) },
-                  }))
-                }
-              />
-            </label>
             <IconButton icon="text" onClick={addTextToActivePage} title="Aggiungi testo" ariaLabel="Aggiungi testo" />
             <IconButton icon="rect" onClick={addRectangleToActivePage} title="Aggiungi rettangolo" ariaLabel="Aggiungi rettangolo" />
             <IconButton icon="list" onClick={addWorksIndexToActivePage} title="Aggiungi elenco opere" ariaLabel="Aggiungi elenco opere" />
-            <IconButton icon="image" onClick={addSelectedWorkToActivePage} disabled={!selectedWork} title="Aggiungi opera selezionata" ariaLabel="Aggiungi opera selezionata" />
             <IconButton icon="fit" onClick={normalizeActivePageNow} title="Riporta elementi dentro vincoli" ariaLabel="Riporta dentro" />
             <IconButton icon="trash" onClick={deleteSelectedElement} disabled={!state.selectedElement} title="Elimina elemento selezionato" ariaLabel="Elimina elemento" />
           </div>
@@ -4129,10 +4159,12 @@ export default function App() {
           onDelete={deleteWork}
           onAdd={() => openCreateWork()}
           onImportFiles={handleDropFiles}
+          onStartWorkDrag={(workId) => setDraggingWorkId(workId)}
+          onEndWorkDrag={() => setDraggingWorkId(null)}
           vertical
         />
 
-        <section className="book-panel">
+        <section className="book-panel" onDragOver={preventBookFileDrop} onDrop={preventBookFileDrop}>
           <BookSpread
             spread={currentSpread}
             works={state.works}
@@ -4144,6 +4176,8 @@ export default function App() {
             onMoveElement={(pageId, kind, elementId, patch) => updateElementOnPage(pageId, kind, elementId, patch)}
             onDropWorkToPage={addWorkToPageAtPosition}
             onMovePlacementToPage={movePlacementToPage}
+            draggingWorkId={draggingWorkId}
+            onWorkDragEnd={() => setDraggingWorkId(null)}
             layoutAssist={state.layoutAssist}
             pageFormat={state.pageFormat}
             onDeleteElementDirect={deleteElementDirect}
@@ -4166,14 +4200,6 @@ export default function App() {
             }
           />
 
-          {dragDropActive && (
-            <div className="drop-overlay">
-              <div>
-                <strong>Rilascia immagine qui</strong>
-                <p>Si aprirà l'editor dell'opera</p>
-              </div>
-            </div>
-          )}
         </section>
 
         <aside className="side-panel">
@@ -4434,7 +4460,6 @@ function Icon({ name }) {
     guides: <svg {...common}><path d="M12 3v18M3 12h18" /><circle cx="12" cy="12" r="2" /></svg>,
     bounds: <svg {...common}><path d="M4 4h16v16H4z" /><path d="M8 8h8v8H8z" /></svg>,
     distributeBounds: <svg {...common}><path d="M4 6h16M4 18h16" /><path d="M7 9v6M12 7v10M17 9v6" /></svg>,
-    spreadMode: <svg {...common}><path d="M3.5 6h8v12h-8zM12.5 6h8v12h-8z" /><path d="M12 6v12" /></svg>,
     text: <svg {...common}><path d="M5 6h14M12 6v12M8.5 18h7" /></svg>,
     template: <svg {...common}><path d="M6 4.5h9l3 3V19.5H6z" /><path d="M15 4.5v3h3M9 11h6M9 14h6" /></svg>,
     rect: <svg {...common}><rect x="5" y="7" width="14" height="10" rx="1.5" /></svg>,
@@ -4462,12 +4487,11 @@ function HelpOverlay({ onClose }) {
     ["+", "Aggiungi pagina"],
     ["Layout", "Pannello preset 1 / 2 / 4 / masonry"],
     ["Distrib.", "Distribuzione su margini on/off"],
-    ["Spread", "Vista libro reale / tecnica"],
     ["Zoom", "Zoom vista e reset"],
     ["Griglia", "Snap griglia"],
     ["Guide", "Guide magnetiche"],
     ["Vincoli", "Margini / pagina intera"],
-    ["T / Rett. / Elenco / Immagine", "Aggiungi testo / rettangolo / elenco opere / opera selezionata"],
+    ["T / Rett. / Elenco", "Aggiungi testo / rettangolo / elenco opere"],
     ["Fit", "Riporta dentro i vincoli"],
     ["Cestino", "Elimina elemento selezionato"],
   ];
@@ -4801,6 +4825,7 @@ function TemplatePanel({ theme, onChange, onClose, panelRef }) {
       <div className="template-tabs">
         <button className={tab === "thanks" ? "active" : ""} onClick={() => setTab("thanks")}>Ringraziamenti</button>
         <button className={tab === "credits" ? "active" : ""} onClick={() => setTab("credits")}>Credits</button>
+        <button className={tab === "captions" ? "active" : ""} onClick={() => setTab("captions")}>Didascalie</button>
         <button className={tab === "intro" ? "active" : ""} onClick={() => setTab("intro")}>Introduzione</button>
         <button className={tab === "preface" ? "active" : ""} onClick={() => setTab("preface")}>Prefazione</button>
         <button className={tab === "back" ? "active" : ""} onClick={() => setTab("back")}>Retrocopertina</button>
@@ -4855,6 +4880,25 @@ function TemplatePanel({ theme, onChange, onClose, panelRef }) {
               onChange={(e) => onChange({ defaultCreditsMd: e.target.value })}
             />
           </label>
+        </div>
+      )}
+
+      {tab === "captions" && (
+        <div className="stack-fields">
+          <label>
+            Template didascalia (placeholder tra doppie parentesi graffe)
+            <textarea
+              rows={8}
+              value={theme.defaultCaptionTemplate || DEFAULT_CAPTION_TEMPLATE}
+              onChange={(e) => onChange({ defaultCaptionTemplate: e.target.value })}
+            />
+          </label>
+          <small className="muted">
+            Placeholder disponibili: <code>{"{{titolo}}"}</code>, <code>{"{{autore}}"}</code>, <code>{"{{dimensioni}}"}</code>, <code>{"{{anno}}"}</code>.
+          </small>
+          <small className="muted">
+            Default: <code>{DEFAULT_CAPTION_TEMPLATE}</code>
+          </small>
         </div>
       )}
 
@@ -5081,9 +5125,11 @@ function NumberField({ label, value, onChange }) {
   );
 }
 
-function Filmstrip({ works, selectedWorkId, onSelect, onEdit, onDelete, onAdd, onImportFiles, vertical = false }) {
+function Filmstrip({ works, selectedWorkId, onSelect, onEdit, onDelete, onAdd, onImportFiles, onStartWorkDrag, onEndWorkDrag, vertical = false }) {
   const fileRef = useRef(null);
   const [hoverPreview, setHoverPreview] = useState(null);
+  const [fileDragOver, setFileDragOver] = useState(false);
+  const suppressClickUntilRef = useRef(0);
 
   function openHoverPreview(work, anchorEl) {
     const rect = anchorEl?.getBoundingClientRect?.();
@@ -5114,8 +5160,31 @@ function Filmstrip({ works, selectedWorkId, onSelect, onEdit, onDelete, onAdd, o
     }
   }
 
+  async function onFilmstripDrop(e) {
+    const types = dataTransferTypesToArray(e.dataTransfer?.types);
+    if (!types.includes("Files")) return;
+    e.preventDefault();
+    setFileDragOver(false);
+    if (e.dataTransfer?.files?.length) {
+      await onImportFiles(e.dataTransfer.files);
+    }
+  }
+
   return (
-    <footer className={`filmstrip ${vertical ? "vertical" : ""}`}>
+    <footer
+      className={`filmstrip ${vertical ? "vertical" : ""} ${fileDragOver ? "file-drop-active" : ""}`}
+      onDragOver={(e) => {
+        const types = dataTransferTypesToArray(e.dataTransfer?.types);
+        if (!types.includes("Files")) return;
+        e.preventDefault();
+        if (!fileDragOver) setFileDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget)) return;
+        if (fileDragOver) setFileDragOver(false);
+      }}
+      onDrop={onFilmstripDrop}
+    >
       <div className="filmstrip-head">
         <div className="filmstrip-meta">
           <strong>{works.length}</strong>
@@ -5138,10 +5207,30 @@ function Filmstrip({ works, selectedWorkId, onSelect, onEdit, onDelete, onAdd, o
             className={`film-card ${selectedWorkId === work.id ? "selected" : ""}`}
             draggable
             onDragStart={(e) => {
-              e.dataTransfer.setData("application/x-catalog-work-id", work.id);
+              suppressClickUntilRef.current = Date.now() + 350;
+              onStartWorkDrag?.(work.id);
+              const safeSet = (mime, value) => {
+                try {
+                  e.dataTransfer.setData(mime, value);
+                } catch {
+                  // ignore unsupported mime in current browser
+                }
+              };
+              safeSet(WORK_DRAG_MIME, work.id);
+              safeSet(WORK_DRAG_MIME_ALT, work.id);
+              safeSet(WORK_DRAG_TEXT, work.id);
+              safeSet("text", work.id);
+              safeSet("Text", work.id);
+              safeSet("application/json", JSON.stringify({ type: "catalog-work", id: work.id }));
+              safeSet("text/uri-list", `${WORK_DRAG_TEXT_PREFIX}${work.id}`);
               e.dataTransfer.effectAllowed = "copyMove";
             }}
+            onDragEnd={() => {
+              suppressClickUntilRef.current = Date.now() + 350;
+              onEndWorkDrag?.();
+            }}
             onClick={() => {
+              if (Date.now() < suppressClickUntilRef.current) return;
               if (selectedWorkId === work.id) onEdit(work);
               else onSelect(work.id);
             }}
@@ -5161,7 +5250,7 @@ function Filmstrip({ works, selectedWorkId, onSelect, onEdit, onDelete, onAdd, o
             >
               ×
             </span>
-            {work.imageUrl ? <img src={work.imageUrl} alt={workLabel(work)} /> : <div className="thumb-placeholder">No img</div>}
+            {work.imageUrl ? <img src={work.imageUrl} alt={workLabel(work)} draggable={false} /> : <div className="thumb-placeholder">No img</div>}
             {!vertical && <small>{workLabel(work)}</small>}
           </button>
         ))}
@@ -5333,6 +5422,8 @@ function BookSpread({
   onMoveElement,
   onDropWorkToPage,
   onMovePlacementToPage,
+  draggingWorkId = null,
+  onWorkDragEnd,
   layoutAssist,
   pageFormat,
   onDeleteElementDirect,
@@ -5421,6 +5512,8 @@ function BookSpread({
                 onMoveElement={onMoveElement}
                 onDropWorkToPage={onDropWorkToPage}
                 onMovePlacementToPage={onMovePlacementToPage}
+                draggingWorkId={draggingWorkId}
+                onWorkDragEnd={onWorkDragEnd}
                 layoutAssist={layoutAssist}
                 pageFormat={pageFormat}
                 onDeleteElementDirect={onDeleteElementDirect}
@@ -5447,6 +5540,8 @@ function BookSpread({
                 onMoveElement={onMoveElement}
                 onDropWorkToPage={onDropWorkToPage}
                 onMovePlacementToPage={onMovePlacementToPage}
+                draggingWorkId={draggingWorkId}
+                onWorkDragEnd={onWorkDragEnd}
                 layoutAssist={layoutAssist}
                 pageFormat={pageFormat}
                 onDeleteElementDirect={onDeleteElementDirect}
@@ -5475,6 +5570,8 @@ function PageCanvas({
   onMoveElement,
   onDropWorkToPage,
   onMovePlacementToPage,
+  draggingWorkId = null,
+  onWorkDragEnd,
   layoutAssist,
   pageFormat,
   onDeleteElementDirect,
@@ -5494,6 +5591,7 @@ function PageCanvas({
   const innerScaleX = renderMetrics.innerWidth > 0 ? renderMetrics.innerWidth / Math.max(1, logicalBounds.width) : 1;
   const innerScaleY = renderMetrics.innerHeight > 0 ? renderMetrics.innerHeight / Math.max(1, logicalBounds.height) : 1;
   const pageScale = renderMetrics.pageWidth > 0 ? renderMetrics.pageWidth / Math.max(1, mmToCssPx(format.width)) : 1;
+  const isWorkDragActive = !!draggingWorkId;
 
   const placementStyleFromMm = (x, y, w, h) => ({
     left: mmToPercent(x, logicalBounds.width),
@@ -5531,14 +5629,22 @@ function PageCanvas({
     };
   }
 
-  function getResizeEdgeFromPointer(e, targetEl, thresholdPx = 8) {
-    const rect = targetEl?.getBoundingClientRect?.();
-    if (!rect) return null;
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const distances = [
-      { edge: "w", d: Math.abs(x) },
-      { edge: "e", d: Math.abs(rect.width - x) },
+function getResizeEdgeFromPointer(e, targetEl, thresholdPx = 8) {
+  const rect = targetEl?.getBoundingClientRect?.();
+  if (!rect) return null;
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const nearLeft = x <= thresholdPx;
+  const nearRight = rect.width - x <= thresholdPx;
+  const nearTop = y <= thresholdPx;
+  const nearBottom = rect.height - y <= thresholdPx;
+  if (nearLeft && nearTop) return "nw";
+  if (nearRight && nearTop) return "ne";
+  if (nearLeft && nearBottom) return "sw";
+  if (nearRight && nearBottom) return "se";
+  const distances = [
+    { edge: "w", d: Math.abs(x) },
+    { edge: "e", d: Math.abs(rect.width - x) },
       { edge: "n", d: Math.abs(y) },
       { edge: "s", d: Math.abs(rect.height - y) },
     ].sort((a, b) => a.d - b.d);
@@ -5704,6 +5810,8 @@ function PageCanvas({
       const startY = Number(drag.anchor?.y ?? 0);
       const isTextBlockResize = drag.kind === "text";
       const isCaptionResize = drag.kind === "placement" && drag.handle === "caption";
+      const isPlacementMainResize = drag.kind === "placement" && drag.handle === "main";
+      const isCornerResize = edge === "nw" || edge === "ne" || edge === "sw" || edge === "se";
       const minW = isTextBlockResize || isCaptionResize ? 5 : 40;
       const minH = isTextBlockResize || isCaptionResize ? 5 : drag.kind === "placement" && drag.handle === "main" ? 40 : 28;
       const startW = Math.max(minW, Number(drag.start?.w) || minW);
@@ -5713,21 +5821,92 @@ function PageCanvas({
       let nextW = startW;
       let nextH = startH;
 
-      if (edge === "e" || edge === "se") {
+      if (isPlacementMainResize && isCornerResize) {
+        const imageAspect = Number(drag.imageAspect);
+        const ratio = Number.isFinite(imageAspect) && imageAspect > 0 ? imageAspect : Math.max(0.01, startW / Math.max(1, startH));
+        const right = startX + startW;
+        const bottom = startY + startH;
+        const desiredW =
+          edge === "se" || edge === "ne"
+            ? startW + dx
+            : startW - dx;
+        const desiredH =
+          edge === "se" || edge === "sw"
+            ? startH + dy
+            : startH - dy;
+
+        const anchor = {
+          se: { x: startX, y: startY, mode: "topleft" },
+          nw: { x: right, y: bottom, mode: "bottomright" },
+          ne: { x: startX, y: bottom, mode: "bottomleft" },
+          sw: { x: right, y: startY, mode: "topright" },
+        }[edge];
+
+        const maxW =
+          edge === "se" || edge === "ne"
+            ? Math.max(minW, constraintBox.maxXForWidth(0) - anchor.x)
+            : Math.max(minW, anchor.x - constraintBox.minX);
+        const maxH =
+          edge === "se" || edge === "sw"
+            ? Math.max(minH, constraintBox.maxYForHeight(0) - anchor.y)
+            : Math.max(minH, anchor.y - constraintBox.minY);
+
+        const size = resolveSizeWithRatio(desiredW, desiredH, ratio, minW, maxW, minH, maxH);
+        nextW = size.w;
+        nextH = size.h;
+
+        if (anchor.mode === "topleft") {
+          nextX = anchor.x;
+          nextY = anchor.y;
+        } else if (anchor.mode === "bottomright") {
+          nextX = anchor.x - nextW;
+          nextY = anchor.y - nextH;
+        } else if (anchor.mode === "bottomleft") {
+          nextX = anchor.x;
+          nextY = anchor.y - nextH;
+        } else {
+          nextX = anchor.x - nextW;
+          nextY = anchor.y;
+        }
+
+        nextX = clampNum(nextX, constraintBox.minX, Math.max(constraintBox.minX, constraintBox.maxXForWidth(nextW)));
+        nextY = clampNum(nextY, constraintBox.minY, Math.max(constraintBox.minY, constraintBox.maxYForHeight(nextH)));
+
+        const patch = {
+          x: Math.round(nextX),
+          y: Math.round(nextY),
+          w: Math.round(nextW),
+          h: Math.round(nextH),
+        };
+        const scale = Math.max(1, Number(drag.start?.imageScale) || 1);
+        const startMetrics = resolvePlacementImageMetrics(startW, startH, scale, drag.imageAspect);
+        const nextMetrics = resolvePlacementImageMetrics(nextW, nextH, scale, drag.imageAspect);
+        const startOffX = Number(drag.start?.imageOffsetX) || 0;
+        const startOffY = Number(drag.start?.imageOffsetY) || 0;
+        const nextOffX = startMetrics.scaledW > 0 ? (startOffX * nextMetrics.scaledW) / startMetrics.scaledW : startOffX;
+        const nextOffY = startMetrics.scaledH > 0 ? (startOffY * nextMetrics.scaledH) / startMetrics.scaledH : startOffY;
+        patch.imageOffsetX = clampNum(nextOffX, -nextMetrics.maxOffsetX, nextMetrics.maxOffsetX);
+        patch.imageOffsetY = clampNum(nextOffY, -nextMetrics.maxOffsetY, nextMetrics.maxOffsetY);
+        onMoveElement(page.id, drag.kind, drag.elementId, patch);
+        setGuides(nextGuides);
+        return;
+      }
+
+      if (edge === "e" || edge === "se" || edge === "ne") {
         const maxW = Math.max(minW, constraintBox.maxXForWidth(0) - startX);
         nextW = clampNum(snapAxis(startW + dx, guideTargetsX, "x"), minW, maxW);
       }
-      if (edge === "w") {
+      if (edge === "w" || edge === "sw" || edge === "nw") {
         const rawX = startX + dx;
         const maxX = startX + startW - minW;
         nextX = clampNum(snapAxis(rawX, guideTargetsX, "x"), constraintBox.minX, maxX);
         nextW = clampNum(startW + (startX - nextX), minW, constraintBox.maxWidth);
       }
-      if (edge === "s" || edge === "se") {
+      if (edge === "s" || edge === "se" || edge === "sw") {
         const maxH = Math.max(minH, constraintBox.maxYForHeight(0) - startY);
         nextH = clampNum(snapAxis(startH + dy, guideTargetsY, "y"), minH, maxH);
       }
-      if (edge === "n") {
+      if (edge === "n" || edge === "ne" || edge === "nw") {
         const rawY = startY + dy;
         const maxY = startY + startH - minH;
         nextY = clampNum(snapAxis(rawY, guideTargetsY, "y"), constraintBox.minY, maxY);
@@ -5880,10 +6059,18 @@ function PageCanvas({
 
   function handleWorkDragOver(e) {
     if (page.type === "summary") return;
-    const types = e.dataTransfer?.types || [];
-    if (!types.includes("application/x-catalog-work-id") && !types.includes("application/x-catalog-placement")) return;
+    const types = dataTransferTypesToArray(e.dataTransfer?.types);
+    const hasPlacementDrag = types.includes(PLACEMENT_DRAG_MIME);
+    const hasWorkDrag = hasDraggedWorkType(types) || isWorkDragActive;
+    if (types.includes("Files")) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "none";
+      if (dragOver) setDragOver(false);
+      return;
+    }
+    if (!hasWorkDrag && !hasPlacementDrag) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = types.includes("application/x-catalog-placement") ? "move" : "copy";
+    e.dataTransfer.dropEffect = hasPlacementDrag ? "move" : "copy";
     if (!dragOver) setDragOver(true);
   }
 
@@ -5893,8 +6080,15 @@ function PageCanvas({
 
   function handleWorkDrop(e) {
     if (page.type === "summary") return;
-    const placementPayloadRaw = e.dataTransfer?.getData("application/x-catalog-placement");
-    const workId = e.dataTransfer?.getData("application/x-catalog-work-id");
+    const types = dataTransferTypesToArray(e.dataTransfer?.types);
+    if (types.includes("Files")) {
+      e.preventDefault();
+      setDragOver(false);
+      onWorkDragEnd?.();
+      return;
+    }
+    const placementPayloadRaw = e.dataTransfer?.getData(PLACEMENT_DRAG_MIME);
+    const workId = extractDraggedWorkId(e.dataTransfer) || draggingWorkId || "";
     if (!placementPayloadRaw && !workId) return;
     e.preventDefault();
     setDragOver(false);
@@ -5920,13 +6114,16 @@ function PageCanvas({
         const payload = JSON.parse(placementPayloadRaw);
         if (payload?.sourcePageId && payload?.placementId) {
           onMovePlacementToPage?.(payload.sourcePageId, payload.placementId, page.id, x, y);
+          onWorkDragEnd?.();
           return;
         }
       } catch {
         // ignore malformed payload
       }
     }
+    if (!workId) return;
     onDropWorkToPage?.(page.id, workId, x, y);
+    onWorkDragEnd?.();
   }
 
   function startInlineTextEdit(txt) {
@@ -5936,7 +6133,7 @@ function PageCanvas({
   }
 
   function startInlineCaptionEdit(placement, work) {
-    setInlineEdit({ kind: "caption", id: placement.id, value: defaultPlacementCaption(placement, work) });
+    setInlineEdit({ kind: "caption", id: placement.id, value: defaultPlacementCaption(placement, work, theme) });
     onSelectPage();
     onSelectElement({ pageId: page.id, kind: "placement", elementId: placement.id });
   }
@@ -5977,7 +6174,7 @@ function PageCanvas({
   return (
     <article
       ref={pageRef}
-      className={`page-canvas ${active ? "active" : ""} ${page.type} ${dragOver ? "drag-over-work" : ""}`}
+      className={`page-canvas ${active ? "active" : ""} ${page.type} ${dragOver ? "drag-over-work" : ""} ${isWorkDragActive && page.type !== "summary" ? "drop-ready-work" : ""}`}
       onClick={onSelectPage}
       onDragOver={handleWorkDragOver}
       onDragLeave={handleWorkDragLeave}
@@ -5995,6 +6192,11 @@ function PageCanvas({
       }}
     >
       <div ref={innerRef} className={`page-inner ${side}`} style={marginStyle}>
+        {page.type !== "summary" && isWorkDragActive && (
+          <div className={`page-drop-hint ${dragOver ? "active" : ""}`}>
+            <strong>{dragOver ? "Rilascia per inserire opera" : "Trascina opera qui"}</strong>
+          </div>
+        )}
         {!!guides.length &&
           guides.map((g, idx) => (
             <div
@@ -6125,7 +6327,7 @@ function PageCanvas({
                         onDragStart={(e) => {
                           e.stopPropagation();
                           e.dataTransfer.setData(
-                            "application/x-catalog-placement",
+                            PLACEMENT_DRAG_MIME,
                             JSON.stringify({ sourcePageId: page.id, placementId: placement.id }),
                           );
                           e.dataTransfer.effectAllowed = "move";
@@ -6134,7 +6336,7 @@ function PageCanvas({
                         ⇄
                       </span>
                     )}
-                    {["e", "w", "n", "s"].map((edge) => (
+                    {["e", "w", "n", "s", "ne", "nw", "se", "sw"].map((edge) => (
                       <span
                         key={edge}
                         className={`resize-handle edge-${edge}`}
@@ -6251,7 +6453,7 @@ function PageCanvas({
                       ) : (
                         <div
                           className="markdown-content caption-markdown"
-                          dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(defaultPlacementCaption(placement, work), { inline: false }) }}
+                          dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(defaultPlacementCaption(placement, work, theme), { inline: false }) }}
                         />
                       )}
                       {["e", "w", "n", "s"].map((edge) => (

@@ -546,6 +546,36 @@ button:disabled {
   outline-offset: 2px;
 }
 
+.page-canvas.drop-ready-work {
+  outline: 1px dashed color-mix(in srgb, var(--accent-color) 45%, white);
+  outline-offset: 1px;
+}
+
+.page-drop-hint {
+  position: absolute;
+  inset: 6% 5%;
+  z-index: 1700;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1.5px dashed rgba(106, 83, 56, 0.3);
+  background: rgba(255, 255, 255, 0.18);
+  color: rgba(49, 38, 23, 0.92);
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.85;
+  transition: all 140ms ease;
+}
+
+.page-drop-hint.active {
+  border-color: color-mix(in srgb, var(--accent-color) 70%, white);
+  background: color-mix(in srgb, var(--accent-color) 12%, white);
+  color: #111;
+  opacity: 1;
+}
+
 .page-frame {
   width: 100%;
   min-width: 0;
@@ -955,6 +985,39 @@ button:disabled {
   border-radius: 999px;
 }
 
+.resize-handle.edge-ne,
+.resize-handle.edge-nw,
+.resize-handle.edge-se,
+.resize-handle.edge-sw {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.resize-handle.edge-ne {
+  top: -6px;
+  right: -6px;
+  cursor: nesw-resize;
+}
+
+.resize-handle.edge-nw {
+  top: -6px;
+  left: -6px;
+  cursor: nwse-resize;
+}
+
+.resize-handle.edge-se {
+  bottom: -6px;
+  right: -6px;
+  cursor: nwse-resize;
+}
+
+.resize-handle.edge-sw {
+  bottom: -6px;
+  left: -6px;
+  cursor: nesw-resize;
+}
+
 .draggable-box:hover .resize-handle,
 .draggable-box.selected .resize-handle {
   opacity: 1;
@@ -1194,6 +1257,11 @@ textarea {
   min-height: 0;
   height: 100%;
   overflow: hidden;
+}
+
+.filmstrip.file-drop-active {
+  border-color: rgba(135, 79, 39, 0.45);
+  box-shadow: inset 0 0 0 2px rgba(135, 79, 39, 0.24);
 }
 
 .filmstrip.vertical {
@@ -1759,40 +1827,10 @@ textarea {
   margin-top: 12px;
 }
 
-.drop-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(126, 79, 42, 0.14);
-  border: 2px dashed rgba(135, 79, 39, 0.4);
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  pointer-events: none;
-}
-
-.drop-overlay > div {
-  background: rgba(251, 247, 239, 0.95);
-  border: 1px solid rgba(90, 68, 42, 0.12);
-  border-radius: 12px;
-  padding: 14px 16px;
-  text-align: center;
-}
-
-.drop-overlay p {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: #5f5649;
-}
-
 .muted {
   margin: 0;
   color: #5f5649;
   font-size: 13px;
-}
-
-.app-shell.drag-active .book-panel {
-  outline: 2px dashed rgba(135, 79, 39, 0.35);
-  outline-offset: -4px;
 }
 
 .print-catalog {
@@ -1821,7 +1859,8 @@ textarea {
 .print-catalog .resize-handle,
 .print-catalog .snap-guide,
 .print-catalog .page-ruler,
-.print-catalog .ruler-corner {
+.print-catalog .ruler-corner,
+.print-catalog .page-drop-hint {
   display: none !important;
 }
 
