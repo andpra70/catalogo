@@ -26,6 +26,7 @@ const DEFAULT_BACK_COVER_MD = `${DEFAULT_BACK_SUMMARY_MD}\n\n${DEFAULT_BACK_BIO_
 const DEFAULT_INTRO_CURATORIAL_MD =
   "# Introduzione\nQuesto catalogo nasce come strumento di lettura e di lavoro: non solo una raccolta di immagini, ma un percorso tra opere, materiali e relazioni.\n\n## Intento editoriale\nLa sequenza delle pagine costruisce una progressione che alterna visione ravvicinata e visione d'insieme, con l'obiettivo di valorizzare ritmo, pause e contrasti.\n\n### Obiettivi\n- restituire il contesto di produzione delle opere\n- evidenziare continuita e differenze tra i cicli\n- offrire una consultazione chiara per studio, archivio e presentazione\n\n## Testo curatoriale\nLa selezione propone un attraversamento tematico tra **materia**, *luce* e memoria visiva. Ogni nucleo mette in dialogo immagini con scale differenti, affinita formali e scarti narrativi.\n\n### Chiavi di lettura\n1. rapporto tra superficie e profondita\n2. tensione tra documento e interpretazione\n3. costruzione di una grammatica visiva coerente\n\n> Nota: questo testo e un template di base. Personalizzalo con riferimenti puntuali a mostra, opere e cronologia.\n\nPer approfondimenti critici: [scheda progetto](https://example.com).";
 const DEFAULT_CAPTION_TEMPLATE = "{{titolo}} {{autore}} {{dimensioni}} {{anno}}";
+const REFERENCE_PRINT_DPI = 300;
 const DEFAULT_THEME_FONT = "'Archivo', sans-serif";
 const DEFAULT_PAGE_FORMAT_ID = "a6-portrait";
 const DEFAULT_THEME_MARGINS = { top: 15, right: 15, bottom: 15, left: 15 };
@@ -2376,6 +2377,14 @@ function formatFileSize(bytes) {
   const mb = kb / 1024;
   if (mb < 1024) return `${mb.toFixed(2)} MB`;
   return `${(mb / 1024).toFixed(2)} GB`;
+}
+
+function pixelsToMmAtDpi(px, dpi = REFERENCE_PRINT_DPI) {
+  const safePx = Number(px);
+  const safeDpi = Number(dpi);
+  if (!Number.isFinite(safePx) || safePx <= 0) return null;
+  if (!Number.isFinite(safeDpi) || safeDpi <= 0) return null;
+  return (safePx * 25.4) / safeDpi;
 }
 
 export default function App() {
@@ -5283,6 +5292,18 @@ function WorkEditorModal({ draft, onCancel, onSave }) {
   const [form, setForm] = useState(draft);
   const [dropOver, setDropOver] = useState(false);
   const [imageInfo, setImageInfo] = useState(null);
+  const printSizeAt300Dpi = useMemo(() => {
+    const widthPx = Number(imageInfo?.width);
+    const heightPx = Number(imageInfo?.height);
+    if (!(widthPx > 0 && heightPx > 0)) return null;
+    const widthMm = pixelsToMmAtDpi(widthPx, REFERENCE_PRINT_DPI);
+    const heightMm = pixelsToMmAtDpi(heightPx, REFERENCE_PRINT_DPI);
+    if (!(Number.isFinite(widthMm) && Number.isFinite(heightMm))) return null;
+    return {
+      width: widthMm.toLocaleString("it-IT", { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+      height: heightMm.toLocaleString("it-IT", { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+    };
+  }, [imageInfo?.width, imageInfo?.height]);
 
   useEffect(() => {
     let cancelled = false;
@@ -5342,7 +5363,11 @@ function WorkEditorModal({ draft, onCancel, onSave }) {
             {form.imageUrl && imageInfo && (
               <div className="image-info-box">
                 <small>
-                  {imageInfo.width && imageInfo.height ? `${imageInfo.width}x${imageInfo.height}px` : "n/d"} ·
+                  {imageInfo.width && imageInfo.height
+                    ? `${imageInfo.width}x${imageInfo.height}px${
+                        printSizeAt300Dpi ? ` (~${printSizeAt300Dpi.width}x${printSizeAt300Dpi.height} mm a ${REFERENCE_PRINT_DPI} dpi)` : ""
+                      }`
+                    : "n/d"} ·
                   {" "}
                   {Number.isFinite(imageInfo.colorCount) ? `~${imageInfo.colorCount.toLocaleString("it-IT")} colori` : "colori n/d"} ·
                   {" "}
