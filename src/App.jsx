@@ -478,8 +478,36 @@ function createFullWidthTextBlock(spec, areaWidth, y, themeTitleSize = 26) {
   };
 }
 
+function coverSlotFromPageType(type) {
+  if (type === "cover-front") return "front";
+  if (type === "inside-front-cover") return "inside-front";
+  if (type === "inside-back-cover") return "inside-back";
+  if (type === "cover-back") return "back";
+  return null;
+}
+
+function getPageCoverSlot(page) {
+  const explicit = String(page?.coverSlot || "").trim();
+  return explicit || coverSlotFromPageType(page?.type);
+}
+
+function markPageAsCoverSlot(page, coverSlot = null) {
+  if (!page) return page;
+  const slot = String(coverSlot || getPageCoverSlot(page) || "").trim();
+  if (!slot) return page;
+  return {
+    ...page,
+    coverSlot: slot,
+    showPageNumber: false,
+  };
+}
+
+function isImmutableCoverPage(page) {
+  return !!getPageCoverSlot(page);
+}
+
 function createInsideFrontCoverPage(marginsOverride, themeCfg = null) {
-  const page = createPage("inside-front-cover", "Seconda di copertina", marginsOverride);
+  const page = markPageAsCoverSlot(createPage("inside-front-cover", "Seconda di copertina", marginsOverride), "inside-front");
   page.showPageNumber = false;
   page.bgColor = themeCfg?.defaultCoverBgColor || "#ffffff";
   page.textBlocks = [];
@@ -523,7 +551,7 @@ function getThemeMasonryCapacity(themeLike) {
 }
 
 function createInsideBackCoverPage(marginsOverride, themeCfg = null) {
-  const page = createPage("inside-back-cover", "Terza di copertina", marginsOverride);
+  const page = markPageAsCoverSlot(createPage("inside-back-cover", "Terza di copertina", marginsOverride), "inside-back");
   page.showPageNumber = false;
   page.bgColor = themeCfg?.defaultCoverBgColor || "#ffffff";
   page.textBlocks = [];
@@ -618,7 +646,7 @@ function createDefaultState(themeSeed = null) {
     pageMargins: { ...defaultMargins, ...(seed.pageMargins || {}) },
   };
   const projectMargins = theme.pageMargins || defaultMargins;
-  const coverFront = createPage("cover-front", "Copertina", projectMargins);
+  const coverFront = markPageAsCoverSlot(createPage("cover-front", "Copertina", projectMargins), "front");
   coverFront.showPageNumber = false;
   coverFront.bgColor = theme.defaultCoverBgColor || "#ffffff";
   {
@@ -732,7 +760,7 @@ function createDefaultState(themeSeed = null) {
     creditsPage.textBlocks = [creditsBlock];
   }
 
-  const coverBack = createPage("cover-back", "Retro copertina", projectMargins);
+  const coverBack = markPageAsCoverSlot(createPage("cover-back", "Retro copertina", projectMargins), "back");
   coverBack.showPageNumber = false;
   coverBack.bgColor = theme.defaultCoverBgColor || "#ffffff";
   {
@@ -765,14 +793,20 @@ function createDefaultState(themeSeed = null) {
     const withCoverBg = isCoverPage(themed)
       ? { ...themed, bgColor: theme.defaultCoverBgColor || "#ffffff" }
       : themed;
-    return normalizePageForCurrentConstraints(withCoverBg, DEFAULT_PAGE_FORMAT_ID, "margins");
+    const normalized = normalizePageForCurrentConstraints(withCoverBg, DEFAULT_PAGE_FORMAT_ID, "margins");
+    return markPageAsCoverSlot(normalized);
   };
 
-  const pages = [coverFront, thanksPage, creditsPage, innerPage, worksIndexPage, coverBack].map(applyThemeAndBounds);
-  const specialPages = {
-    insideFront: applyThemeAndBounds(createInsideFrontCoverPage(projectMargins, theme)),
-    insideBack: applyThemeAndBounds(createInsideBackCoverPage(projectMargins, theme)),
-  };
+  const pages = [
+    coverFront,
+    createInsideFrontCoverPage(projectMargins, theme),
+    thanksPage,
+    creditsPage,
+    innerPage,
+    worksIndexPage,
+    createInsideBackCoverPage(projectMargins, theme),
+    coverBack,
+  ].map(applyThemeAndBounds);
 
   return {
     projectTitle: "Progetto",
@@ -780,11 +814,10 @@ function createDefaultState(themeSeed = null) {
     selectedWorkId: null,
     pages,
     currentSpread: 0,
-    activePageId: pages.find((p) => p?.systemPageKey === "intro")?.id || pages[1]?.id || null,
+    activePageId: pages.find((p) => p?.systemPageKey === "intro")?.id || pages.find((p) => !isCoverPage(p))?.id || pages[0]?.id || null,
     selectedElement: null,
     theme,
     pageFormat: DEFAULT_PAGE_FORMAT_ID,
-    specialPages,
     layoutAssist: {
       snapToGrid: true,
       showGuides: true,
@@ -803,16 +836,20 @@ function sanitizeWorkForStorage(work) {
 }
 
 function sanitizeStateForStorage(state) {
+  const { specialPages, ...rest } = state || {};
   return {
-    ...state,
-    works: (state.works || []).map(sanitizeWorkForStorage),
+    ...rest,
+    pages: normalizePagesWithCoverSlots(rest.pages || [], null, rest.theme),
+    works: (rest.works || []).map(sanitizeWorkForStorage),
   };
 }
 
 function sanitizeStateForExport(state) {
+  const { specialPages, ...rest } = state || {};
   return {
-    ...state,
-    works: (state.works || []).map((work) => {
+    ...rest,
+    pages: normalizePagesWithCoverSlots(rest.pages || [], null, rest.theme),
+    works: (rest.works || []).map((work) => {
       const { _imageFile, ...rest } = normalizeWorkData(work);
       return rest;
     }),
@@ -1034,9 +1071,31 @@ function isWorksIndexPage(page) {
   return (page.textBlocks || []).some((txt) => txt?.systemTextKey === "works-index");
 }
 
+function isCoverPage(page) {
+  return !!getPageCoverSlot(page);
+}
+
+function normalizePagesWithCoverSlots(pages = [], specialPages = null, themeCfg = null) {
+  const list = [...(pages || [])].filter(Boolean);
+  const margins = themeCfg?.pageMargins || list[0]?.margins || { ...DEFAULT_THEME_MARGINS };
+  const findByType = (type) => list.find((page) => page?.type === type) || null;
+  const frontCover = findByType("cover-front") || createPage("cover-front", "Copertina", margins);
+  const insideFront = findByType("inside-front-cover") || specialPages?.insideFront || createInsideFrontCoverPage(margins, themeCfg);
+  const insideBack = findByType("inside-back-cover") || specialPages?.insideBack || createInsideBackCoverPage(margins, themeCfg);
+  const backCover = findByType("cover-back") || createPage("cover-back", "Retro copertina", margins);
+  const innerPages = list.filter((page) => !isCoverPage(page));
+  return [frontCover, insideFront, ...innerPages, insideBack, backCover].map((page) => markPageAsCoverSlot(page));
+}
+
 function getBackCoverIndex(pages = []) {
   const idx = (pages || []).findIndex((page) => page?.type === "cover-back");
   return idx >= 0 ? idx : Math.max(0, (pages || []).length - 1);
+}
+
+function getBackMatterStartIndex(pages = []) {
+  const insideBackIdx = (pages || []).findIndex((page) => page?.type === "inside-back-cover");
+  if (insideBackIdx >= 0) return insideBackIdx;
+  return getBackCoverIndex(pages);
 }
 
 function getWorksIndexPageIndex(pages = []) {
@@ -1052,23 +1111,18 @@ function ensureWorksIndexBeforeBackCover(pages = []) {
   const worksIndex = getWorksIndexPageIndex(list);
   if (worksIndex < 0) return list;
   const [worksIndexPage] = list.splice(worksIndex, 1);
-  const backCoverIndex = getBackCoverIndex(list);
-  list.splice(backCoverIndex, 0, worksIndexPage);
+  const backMatterStart = getBackMatterStartIndex(list);
+  list.splice(backMatterStart, 0, worksIndexPage);
   return list;
 }
 
 function getImageInsertionIndex(pages = []) {
   const worksIndex = getWorksIndexPageIndex(pages);
-  const backCoverIndex = getBackCoverIndex(pages);
-  const upperBound = worksIndex >= 0 ? worksIndex : backCoverIndex;
+  const backMatterStart = getBackMatterStartIndex(pages);
+  const upperBound = worksIndex >= 0 ? worksIndex : backMatterStart;
   const introIndex = getIntroPageIndex(pages);
   const lowerBound = introIndex >= 0 ? introIndex + 1 : 1;
   return Math.max(Math.min(upperBound, pages.length), Math.min(lowerBound, upperBound));
-}
-
-function isCoverPage(page) {
-  const type = page?.type;
-  return type === "cover-front" || type === "inside-front-cover" || type === "inside-back-cover" || type === "cover-back";
 }
 
 function scalePageLayoutForFormat(page, fromFormatId, toFormatId, boundMode = "margins") {
@@ -1219,16 +1273,14 @@ function normalizePageElementsToRenderedBounds(page, innerWidth, innerHeight, bo
   };
 }
 
-function buildWorkFirstPageMapForCatalog(frontCover, insideFront, innerPages) {
+function buildWorkFirstPageMapForCatalog(pages = []) {
   const map = new Map();
-  const pages = [frontCover, insideFront, ...(innerPages || [])];
   let pageNo = 0;
-  for (const page of pages) {
+  for (const page of pages || []) {
     if (!page) continue;
-    const isCover = page.type === "cover-front" || page.type === "cover-back";
+    const isCover = isCoverPage(page);
     const isSpacer = page.type === "spacer";
-    const isInsideCover = page.type === "inside-front-cover" || page.type === "inside-back-cover";
-    if (!isCover && !isSpacer && !isInsideCover) {
+    if (!isCover && !isSpacer) {
       pageNo += 1;
     }
     if (pageNo <= 0) continue;
@@ -2387,6 +2439,36 @@ function pixelsToMmAtDpi(px, dpi = REFERENCE_PRINT_DPI) {
   return (safePx * 25.4) / safeDpi;
 }
 
+function normalizeIncomingSnapshot(baseState, incomingSnapshot, worksOverride = null) {
+  const incoming = incomingSnapshot || {};
+  const { specialPages: legacySpecialPages, ...incomingRest } = incoming;
+  const nextTheme = {
+    ...baseState.theme,
+    ...(incomingRest.theme || {}),
+    pageMargins: {
+      ...(baseState.theme?.pageMargins || {}),
+      ...((incomingRest.theme || {}).pageMargins || {}),
+    },
+  };
+  const nextPages = normalizePagesWithCoverSlots(incomingRest.pages || baseState.pages, legacySpecialPages, nextTheme);
+  const requestedActivePageId = incomingRest.activePageId;
+  const activePageId = nextPages.some((page) => page?.id === requestedActivePageId)
+    ? requestedActivePageId
+    : nextPages.find((page) => !isCoverPage(page))?.id || nextPages[0]?.id || null;
+  return {
+    ...baseState,
+    ...incomingRest,
+    theme: nextTheme,
+    pages: nextPages,
+    works: worksOverride || incomingRest.works || baseState.works,
+    pageFormat: normalizePageFormatId(incomingRest.pageFormat, baseState.pageFormat),
+    activePageId,
+    selectedElement: null,
+    currentSpread: 0,
+    bookViewMode: "real",
+  };
+}
+
 export default function App() {
   const [state, setState] = useState(loadState);
   const prevPageFormatRef = useRef(state.pageFormat);
@@ -2473,45 +2555,40 @@ export default function App() {
   }, [state.works]);
 
   useEffect(() => {
-    if (state.specialPages?.insideFront && state.specialPages?.insideBack) return;
     setState((prev) => {
-      if (prev.specialPages?.insideFront && prev.specialPages?.insideBack) return prev;
-      const margins = prev.theme?.pageMargins || createDefaultState().theme.pageMargins;
+      const normalizedPages = normalizePagesWithCoverSlots(prev.pages || [], prev.specialPages, prev.theme);
+      const isSameLength = normalizedPages.length === (prev.pages || []).length;
+      const sameOrderById =
+        isSameLength && normalizedPages.every((page, idx) => page?.id && page.id === prev.pages?.[idx]?.id);
+      const hasLegacySpecialPages = !!prev.specialPages;
+      const hasMissingCoverMarker = (prev.pages || []).some((page) => isCoverPage(page) && !String(page?.coverSlot || "").trim());
+      if (!hasLegacySpecialPages && sameOrderById && !hasMissingCoverMarker) return prev;
+      const { specialPages, ...rest } = prev;
+      const activePageStillExists = normalizedPages.some((page) => page?.id === prev.activePageId);
       return {
-        ...prev,
-        specialPages: {
-          insideFront: prev.specialPages?.insideFront || createInsideFrontCoverPage(margins, prev.theme),
-          insideBack: prev.specialPages?.insideBack || createInsideBackCoverPage(margins, prev.theme),
-        },
+        ...rest,
+        pages: normalizedPages,
+        activePageId: activePageStillExists
+          ? prev.activePageId
+          : normalizedPages.find((page) => !isCoverPage(page))?.id || normalizedPages[0]?.id || null,
       };
     });
-  }, [state.specialPages]);
+  }, []);
 
-  const editablePages = state.pages;
-  const editableSpecialPages = [state.specialPages?.insideFront, state.specialPages?.insideBack].filter(Boolean);
+  const editablePages = state.pages || [];
   const currentFormat = getPageFormat(state.pageFormat);
-  const frontCover = editablePages[0];
-  const backCover = editablePages[editablePages.length - 1];
-  const innerPages = editablePages.slice(1, -1).map((page) => ({
-    ...page,
-    title: page.title || "Pagina",
-  }));
-  const insideFrontBlank = state.specialPages?.insideFront || createInsideFrontCoverPage(state.theme.pageMargins, state.theme);
-  const insideBackBlank = state.specialPages?.insideBack || createInsideBackCoverPage(state.theme.pageMargins, state.theme);
-  const workPageMap = buildWorkFirstPageMapForCatalog(frontCover, insideFrontBlank, innerPages);
+  const workPageMap = buildWorkFirstPageMapForCatalog(editablePages);
   const worksIndexMarkdown = buildWorksIndexMarkdown(state.works, workPageMap);
-  const allEditablePages = [...editablePages, ...editableSpecialPages];
-  const renderPagesBase = [frontCover, insideFrontBlank, ...innerPages, insideBackBlank, backCover];
+  const allEditablePages = editablePages;
   let autoPageCounter = 0;
-  const renderPages = renderPagesBase.map((page, idx) => {
+  const renderPages = editablePages.map((page) => {
     if (!page) return page;
-    const isCover = idx === 0 || idx === renderPagesBase.length - 1;
+    const isCover = isCoverPage(page);
     const isSpacer = page.type === "spacer";
-    const isInsideCover = page.type === "inside-front-cover" || page.type === "inside-back-cover";
-    if (!isCover && !isSpacer && !isInsideCover) autoPageCounter += 1;
+    if (!isCover && !isSpacer) autoPageCounter += 1;
     return {
       ...page,
-      computedPageNumber: isCover || isSpacer || isInsideCover ? null : autoPageCounter,
+      computedPageNumber: isCover || isSpacer ? null : autoPageCounter,
     };
   });
 
@@ -2557,29 +2634,7 @@ export default function App() {
         const pageChanged = textBlocks.some((txt, idx) => txt !== (page.textBlocks || [])[idx]);
         return pageChanged ? { ...page, textBlocks } : page;
       });
-      const insideFront = prev.specialPages?.insideFront
-        ? {
-            ...prev.specialPages.insideFront,
-            textBlocks: patchTextBlocks(prev.specialPages.insideFront.textBlocks || []),
-          }
-        : prev.specialPages?.insideFront;
-      const insideBack = prev.specialPages?.insideBack
-        ? {
-            ...prev.specialPages.insideBack,
-            textBlocks: patchTextBlocks(prev.specialPages.insideBack.textBlocks || []),
-          }
-        : prev.specialPages?.insideBack;
-      return changed
-        ? {
-            ...prev,
-            pages,
-            specialPages: {
-              ...prev.specialPages,
-              insideFront,
-              insideBack,
-            },
-          }
-        : prev;
+      return changed ? { ...prev, pages } : prev;
     });
   }, [worksIndexMarkdown]);
 
@@ -2602,14 +2657,6 @@ export default function App() {
       return {
         ...prev,
         pages: (prev.pages || []).map((p) => fitPageToNewFormat(p)),
-        specialPages: {
-          insideFront: prev.specialPages?.insideFront
-            ? fitPageToNewFormat(prev.specialPages.insideFront)
-            : prev.specialPages?.insideFront,
-          insideBack: prev.specialPages?.insideBack
-            ? fitPageToNewFormat(prev.specialPages.insideBack)
-            : prev.specialPages?.insideBack,
-        },
       };
     });
     prevPageFormatRef.current = state.pageFormat;
@@ -2710,10 +2757,6 @@ export default function App() {
         ...prev,
         theme: nextTheme,
         pages: (prev.pages || []).map(patchPageElementsBorders),
-        specialPages: {
-          insideFront: prev.specialPages?.insideFront ? patchPageElementsBorders(prev.specialPages.insideFront) : prev.specialPages?.insideFront,
-          insideBack: prev.specialPages?.insideBack ? patchPageElementsBorders(prev.specialPages.insideBack) : prev.specialPages?.insideBack,
-        },
       };
     });
   }
@@ -2730,10 +2773,6 @@ export default function App() {
         ...prev,
         theme: { ...prev.theme, pageMargins: nextMargins },
         pages: (prev.pages || []).map(applyMarginsAndNormalize),
-        specialPages: {
-          insideFront: applyMarginsAndNormalize(prev.specialPages?.insideFront),
-          insideBack: applyMarginsAndNormalize(prev.specialPages?.insideBack),
-        },
       };
     });
   }
@@ -2746,16 +2785,6 @@ export default function App() {
         const next = typeof updater === "function" ? updater(page) : { ...page, ...updater };
         return next;
       }),
-      specialPages: {
-        insideFront:
-          prev.specialPages?.insideFront?.id === pageId
-            ? (typeof updater === "function" ? updater(prev.specialPages.insideFront) : { ...prev.specialPages.insideFront, ...updater })
-            : prev.specialPages?.insideFront,
-        insideBack:
-          prev.specialPages?.insideBack?.id === pageId
-            ? (typeof updater === "function" ? updater(prev.specialPages.insideBack) : { ...prev.specialPages.insideBack, ...updater })
-            : prev.specialPages?.insideBack,
-      },
     }));
   }
 
@@ -2801,10 +2830,6 @@ export default function App() {
         ...prev,
         works,
         pages: (prev.pages || []).map(patchPageCaptions),
-        specialPages: {
-          insideFront: patchPageCaptions(prev.specialPages?.insideFront),
-          insideBack: patchPageCaptions(prev.specialPages?.insideBack),
-        },
         selectedWorkId: incoming.id,
         selectedElement: exists ? prev.selectedElement : null,
       };
@@ -2898,7 +2923,7 @@ export default function App() {
       const newPage = createPage("page", `Pagina ${Math.max(prev.pages.length - 1, 1)}`, prev.theme?.pageMargins);
       const next = [...prev.pages];
       const activeIndex = next.findIndex((page) => page.id === prev.activePageId);
-      const backCoverIndex = Math.max(0, next.length - 1);
+      const backCoverIndex = getBackMatterStartIndex(next);
       const insertIndex =
         activeIndex >= 0 && activeIndex < backCoverIndex
           ? activeIndex + 1
@@ -2908,13 +2933,10 @@ export default function App() {
         const paddingPage = createPage("page", "Padding", prev.theme?.pageMargins);
         paddingPage.systemPageKey = "auto-padding";
         paddingPage.bgColor = prev.theme?.defaultPageBgColor || "#ffffff";
-        next.splice(Math.min(insertIndex + 1, next.length - 1), 0, paddingPage);
+        const paddingInsertIndex = getBackMatterStartIndex(next);
+        next.splice(paddingInsertIndex, 0, paddingPage);
       }
-      const insideFront = prev.specialPages?.insideFront || null;
-      const insideBack = prev.specialPages?.insideBack || null;
-      const inner = next.slice(1, -1).map((page) => ({ ...page, title: page.title || "Pagina" }));
-      const renderPages = [next[0], insideFront, ...inner, insideBack, next[next.length - 1]];
-      const nextSpreads = buildBookSpreads(renderPages);
+      const nextSpreads = buildBookSpreads(next);
       const spreadIdx = Math.max(0, nextSpreads.findIndex((spread) => spread.some((page) => page?.id === newPage.id)));
       return { ...prev, pages: next, activePageId: newPage.id, currentSpread: spreadIdx };
     });
@@ -2928,13 +2950,12 @@ export default function App() {
     const pageIndex = (prev.pages || []).findIndex((p) => p.id === pageId);
     const pages = prev.pages || [];
     if (pageIndex >= 0) {
+      if (isImmutableCoverPage(pages[pageIndex])) return prev;
       if (pages.length <= 1) return prev;
       const nextPages = pages.filter((p) => p.id !== pageId);
       const nextActivePageId =
         nextPages[Math.min(Math.max(pageIndex, 0), Math.max(nextPages.length - 1, 0))]?.id ||
         nextPages[0]?.id ||
-        prev.specialPages?.insideFront?.id ||
-        prev.specialPages?.insideBack?.id ||
         null;
       return {
         ...prev,
@@ -2943,26 +2964,14 @@ export default function App() {
         selectedElement: null,
       };
     }
-    if (prev.specialPages?.insideFront?.id === pageId) {
-      return {
-        ...prev,
-        specialPages: { ...prev.specialPages, insideFront: null },
-        activePageId: pages[0]?.id || prev.specialPages?.insideBack?.id || null,
-        selectedElement: null,
-      };
-    }
-    if (prev.specialPages?.insideBack?.id === pageId) {
-      return {
-        ...prev,
-        specialPages: { ...prev.specialPages, insideBack: null },
-        activePageId: pages[pages.length - 1]?.id || prev.specialPages?.insideFront?.id || null,
-        selectedElement: null,
-      };
-    }
     return prev;
   }
 
-  const activeEditablePage = allEditablePages.find((p) => p.id === state.activePageId) || state.pages[1];
+  const activeEditablePage =
+    allEditablePages.find((p) => p.id === state.activePageId) ||
+    allEditablePages.find((p) => !isCoverPage(p)) ||
+    allEditablePages[0] ||
+    null;
   const selectedWork = state.works.find((w) => w.id === state.selectedWorkId) || null;
 
   function addTextToActivePage() {
@@ -3077,12 +3086,7 @@ export default function App() {
   }
 
   function findEditablePageById(snapshot, pageId) {
-    return (
-      snapshot.pages.find((page) => page.id === pageId) ||
-      (snapshot.specialPages?.insideFront?.id === pageId ? snapshot.specialPages.insideFront : null) ||
-      (snapshot.specialPages?.insideBack?.id === pageId ? snapshot.specialPages.insideBack : null) ||
-      null
-    );
+    return snapshot.pages.find((page) => page.id === pageId) || null;
   }
 
   function collectWorksForLayout(page, presetId, snapshot, { onlyPageWorks = false } = {}) {
@@ -3151,10 +3155,6 @@ export default function App() {
       return {
         ...prev,
         pages: (prev.pages || []).map((candidate) => patchSinglePage(candidate) || candidate),
-        specialPages: {
-          insideFront: patchSinglePage(prev.specialPages?.insideFront),
-          insideBack: patchSinglePage(prev.specialPages?.insideBack),
-        },
         activePageId: page.id,
         selectedElement: rebuiltPage.placements[0] ? { pageId: page.id, kind: "placement", elementId: rebuiltPage.placements[0].id } : null,
       };
@@ -3237,11 +3237,7 @@ export default function App() {
 
   function movePlacementToPage(sourcePageId, placementId, targetPageId, x, y) {
     patchState((prev) => {
-      const findEditablePageById = (id) =>
-        prev.pages.find((p) => p.id === id) ||
-        (prev.specialPages?.insideFront?.id === id ? prev.specialPages.insideFront : null) ||
-        (prev.specialPages?.insideBack?.id === id ? prev.specialPages.insideBack : null) ||
-        null;
+      const findEditablePageById = (id) => prev.pages.find((p) => p.id === id) || null;
       const sourcePage = findEditablePageById(sourcePageId);
       const targetPage = findEditablePageById(targetPageId);
       if (!sourcePage || !targetPage || targetPage.type === "summary") return prev;
@@ -3278,10 +3274,6 @@ export default function App() {
       return {
         ...prev,
         pages: (prev.pages || []).map(patchSinglePage),
-        specialPages: {
-          insideFront: patchSinglePage(prev.specialPages?.insideFront),
-          insideBack: patchSinglePage(prev.specialPages?.insideBack),
-        },
         activePageId: targetPageId,
         selectedElement: { pageId: targetPageId, kind: "placement", elementId: placementId },
       };
@@ -3398,10 +3390,6 @@ export default function App() {
       const next = {
         ...prev,
         pages: (prev.pages || []).map(patchSinglePage),
-        specialPages: {
-          insideFront: patchSinglePage(prev.specialPages?.insideFront),
-          insideBack: patchSinglePage(prev.specialPages?.insideBack),
-        },
         selectedElement: null,
       };
       return next;
@@ -3425,10 +3413,6 @@ export default function App() {
       const next = {
         ...prev,
         pages: (prev.pages || []).map(patchSinglePage),
-        specialPages: {
-          insideFront: patchSinglePage(prev.specialPages?.insideFront),
-          insideBack: patchSinglePage(prev.specialPages?.insideBack),
-        },
         selectedElement: isSame ? null : prev.selectedElement,
       };
       return next;
@@ -3561,10 +3545,6 @@ export default function App() {
           return {
             ...prev,
             pages: (prev.pages || []).map(patchSinglePage),
-            specialPages: {
-              insideFront: patchSinglePage(prev.specialPages?.insideFront),
-              insideBack: patchSinglePage(prev.specialPages?.insideBack),
-            },
             selectedElement: nextSelection,
             activePageId: page.id,
           };
@@ -3610,15 +3590,7 @@ export default function App() {
     );
     const base = createDefaultState();
     skipNextPageFormatAdjustRef.current = true;
-    setState({
-      ...base,
-      ...incoming,
-      bookViewMode: "real",
-      pageFormat: normalizePageFormatId(incoming.pageFormat, base.pageFormat),
-      works: importedWorks,
-      selectedElement: null,
-      currentSpread: 0,
-    });
+    setState(normalizeIncomingSnapshot(base, incoming, importedWorks));
   }
 
   async function importCatalogJson(file) {
@@ -3792,15 +3764,8 @@ export default function App() {
       const incoming = JSON.parse(raw);
       const base = createDefaultState();
       skipNextPageFormatAdjustRef.current = true;
-      setState({
-        ...base,
-        ...incoming,
-        bookViewMode: "real",
-        pageFormat: normalizePageFormatId(incoming.pageFormat, base.pageFormat),
-        works: (incoming.works || []).map((w) => ({ ...normalizeWorkData(w), imageUrl: "" })),
-        selectedElement: null,
-        currentSpread: 0,
-      });
+      const incomingWorks = (incoming.works || []).map((w) => ({ ...normalizeWorkData(w), imageUrl: "" }));
+      setState(normalizeIncomingSnapshot(base, incoming, incomingWorks));
       setCurrentProjectId(projectId);
       setTopbarMenuOpen(false);
     } catch (err) {
@@ -4216,6 +4181,7 @@ export default function App() {
             {activeEditablePage ? (
               <PageInspector
                 page={activeEditablePage}
+                canDelete={!isImmutableCoverPage(activeEditablePage)}
                 onChange={(patch) => patchPage(activeEditablePage.id, (p) => ({ ...p, ...patch }))}
                 onDeletePage={() => removePage(activeEditablePage.id)}
               />
@@ -4927,7 +4893,7 @@ function TemplatePanel({ theme, onChange, onClose, panelRef }) {
   );
 }
 
-function PageInspector({ page, onChange, onDeletePage }) {
+function PageInspector({ page, canDelete = true, onChange, onDeletePage }) {
   return (
     <div className="stack-fields">
       <label>
@@ -4942,9 +4908,13 @@ function PageInspector({ page, onChange, onDeletePage }) {
         Colore numero pagina
         <input type="color" value={page.pageNumberColor || "#666666"} onChange={(e) => onChange({ pageNumberColor: e.target.value })} />
       </label>
-      <button className="danger-btn" onClick={onDeletePage}>
-        Elimina pagina
-      </button>
+      {canDelete ? (
+        <button className="danger-btn" onClick={onDeletePage}>
+          Elimina pagina
+        </button>
+      ) : (
+        <small className="muted">Pagina copertina bloccata: non eliminabile.</small>
+      )}
     </div>
   );
 }
