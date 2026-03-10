@@ -1298,7 +1298,13 @@ function buildBookSpreads(pages) {
   const backCover = pages[pages.length - 1];
   const internals = [...pages.slice(1, -1)];
   if (internals.length % 2 !== 0) {
-    internals.push(createRenderSpacerPage(`auto_spacer_${internals.length}`, "Pagina vuota", frontCover?.margins));
+    const spacer = createRenderSpacerPage(`auto_spacer_${internals.length}`, "Pagina vuota", frontCover?.margins);
+    const insideBackIdx = internals.findIndex((page) => page?.type === "inside-back-cover");
+    if (insideBackIdx >= 0) {
+      internals.splice(insideBackIdx, 0, spacer);
+    } else {
+      internals.push(spacer);
+    }
   }
   const spreads = [[null, frontCover]];
   for (let i = 0; i < internals.length; i += 2) {
@@ -4559,7 +4565,14 @@ function LayoutPanel({
         ))}
       </div>
       <div className="layout-panel-actions">
-        <button className="ghost-btn" onClick={onApplyActivePage} disabled={!hasActivePage || !hasWorks}>
+        <button
+          className="ghost-btn"
+          onClick={async () => {
+            await onApplyActivePage?.();
+            onClose?.();
+          }}
+          disabled={!hasActivePage || !hasWorks}
+        >
           Applica alla pagina attiva
         </button>
         <button
