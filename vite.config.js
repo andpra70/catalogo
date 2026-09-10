@@ -5,9 +5,11 @@ export default defineConfig({
   base: "./",
   plugins: [react()],
   server: {
-    allowedHosts: ["zanotti.iliadboxos.it"],
+    host: '0.0.0.0',
+    allowedHosts: true,
   },
   preview: {
-    allowedHosts: ["zanotti.iliadboxos.it"],
+    host: '0.0.0.0',
+    allowedHosts: true,
   },
 });

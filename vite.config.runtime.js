@@ -3,9 +3,11 @@ import { defineConfig } from "vite";
 export default defineConfig({
   base: "./",
   server: {
-    allowedHosts: ["zanotti.iliadboxos.it"],
+    host: '0.0.0.0',
+    allowedHosts: true,
   },
   preview: {
-    allowedHosts: ["zanotti.iliadboxos.it"],
+    host: '0.0.0.0',
+    allowedHosts: true,
   },
 });
