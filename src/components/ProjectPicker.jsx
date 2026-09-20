@@ -39,10 +39,13 @@ export default function ProjectPicker() {
         {loading && <div className="project-picker-status">Caricamento progetti…</div>}
         {!loading && error && <div className="project-picker-status error">{error}</div>}
         {!loading && !error && projects.length === 0 && (
-          <div className="project-picker-empty">
-            <div className="project-picker-status">Nessun progetto disponibile.</div>
+          <div className="project-picker-status project-picker-empty">
+            <div>
+              <strong>Nessun progetto disponibile.</strong>
+              <span>Puoi creare ora il progetto iniziale “{EMPTY_CATALOG_PROJECT.name}”.</span>
+            </div>
             <a href={projectUrl(EMPTY_CATALOG_PROJECT.id)} className="project-picker-create">
-              Crea progetto
+              Crea e apri “{EMPTY_CATALOG_PROJECT.name}”
             </a>
           </div>
         )}
