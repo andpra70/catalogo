@@ -1,21 +1,12 @@
-FROM node:20-alpine AS deps
+FROM node:20-alpine AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
-
-FROM node:20-alpine AS build
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY index.html vite.config.js ./
+COPY src ./src
 RUN npm run build
 
-FROM node:20-alpine AS runtime
-WORKDIR /app
-COPY package*.json ./
-COPY vite.config.runtime.js ./vite.config.js
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=build /app/dist ./dist
-
-EXPOSE 6063
-
-CMD ["npx", "vite", "preview", "--host", "0.0.0.0", "--port", "6063", "--strictPort"]
+FROM nginxinc/nginx-unprivileged:1.27-alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 8080

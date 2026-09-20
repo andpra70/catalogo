@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import sampleProjectPayload from "./sample/sample.json";
+import { EMPTY_CATALOG_PROJECT, normalizeSavedItems, projectVfsPath, themeVfsPath, VFS_PROJECTS_INDEX, VFS_THEMES_INDEX } from "./models/storageModels";
+import { deleteVfsFile, ensureCatalogDirectories, loadSavedIndexes, readVfsDataUrl, readVfsJson, uploadVfsFile, writeVfsJson } from "./services/vfsStorage";
 
 const PROJECTS_INDEX_KEY = "catalogo-opere-projects-index-v1";
 const PROJECT_STORAGE_PREFIX = "catalogo-opere-project:";
@@ -2475,7 +2477,7 @@ function normalizeIncomingSnapshot(baseState, incomingSnapshot, worksOverride = 
   };
 }
 
-export default function App() {
+export default function App({ initialProjectId = null }) {
   const [state, setState] = useState(loadState);
   const prevPageFormatRef = useRef(state.pageFormat);
   const skipNextPageFormatAdjustRef = useRef(false);
@@ -2494,10 +2496,11 @@ export default function App() {
   const templatePanelRef = useRef(null);
   const elementClipboardRef = useRef(null);
   const [pageMetrics, setPageMetrics] = useState({});
-  const [savedProjects, setSavedProjects] = useState(() => loadProjectsIndex());
-  const [currentProjectId, setCurrentProjectId] = useState(null);
+  const [savedProjects, setSavedProjects] = useState([]);
+  const [currentProjectId, setCurrentProjectId] = useState(initialProjectId);
+  const initialProjectLoadedRef = useRef(false);
   const [projectDialog, setProjectDialog] = useState({ open: false, mode: "save", name: "" });
-  const [savedThemes, setSavedThemes] = useState(() => loadThemesIndex());
+  const [savedThemes, setSavedThemes] = useState([]);
   const [currentThemeId, setCurrentThemeId] = useState(null);
   const [themeDialog, setThemeDialog] = useState({ open: false, mode: "save", name: "" });
   const [printProgress, setPrintProgress] = useState({ active: false, current: 0, total: 0, message: "" });
@@ -2510,6 +2513,28 @@ export default function App() {
     String(state.projectTitle || "").trim() ||
     String(currentSavedProject?.name || "").trim() ||
     "Progetto";
+
+  useEffect(() => {
+    ensureCatalogDirectories()
+      .then(() => loadSavedIndexes(VFS_PROJECTS_INDEX, VFS_THEMES_INDEX))
+      .then(({ projects, themes }) => {
+        setSavedProjects((current) => (
+          initialProjectId === EMPTY_CATALOG_PROJECT.id &&
+          current.some((project) => project.id === EMPTY_CATALOG_PROJECT.id) &&
+          !projects.some((project) => project.id === EMPTY_CATALOG_PROJECT.id)
+            ? current
+            : projects
+        ));
+        setSavedThemes(themes);
+      })
+      .catch((err) => window.alert(`Caricamento VFS2 fallito: ${err.message}`));
+  }, [initialProjectId]);
+
+  useEffect(() => {
+    if (!initialProjectId || initialProjectLoadedRef.current) return;
+    initialProjectLoadedRef.current = true;
+    loadProjectFromList(initialProjectId);
+  }, [initialProjectId]);
 
   useEffect(() => {
     function onDocPointerDown(e) {
@@ -2542,7 +2567,11 @@ export default function App() {
         (state.works || []).map(async (work) => {
           if (work.imageUrl || !work.imageId) return work;
           try {
-            const imageUrl = await idbGetImage(work.imageId);
+            let imageUrl = await idbGetImage(work.imageId);
+            if (!imageUrl && work.imagePath) {
+              imageUrl = await readVfsDataUrl(work.imagePath);
+              if (imageUrl) await idbPutImage(work.imageId, imageUrl);
+            }
             return imageUrl ? { ...work, imageUrl } : work;
           } catch {
             return work;
@@ -2809,6 +2838,10 @@ export default function App() {
     if (incoming._imageFile && incoming.imageUrl) {
       const nextImageId = incoming.imageId || uid("img");
       await idbPutImage(nextImageId, incoming.imageUrl);
+      const safeName = String(incoming._imageFile.name || "image").replace(/[^a-zA-Z0-9._-]/g, "_");
+      const imageName = `${nextImageId}-${safeName}`;
+      await uploadVfsFile("catalogo-opere/images", incoming._imageFile, imageName);
+      incoming.imagePath = `catalogo-opere/images/${imageName}`;
       if (existing?.imageId && existing.imageId !== nextImageId) {
         await idbDeleteImage(existing.imageId);
       }
@@ -3617,19 +3650,19 @@ export default function App() {
     }
   }
 
-  function persistProjectByName(name, projectIdOverride = null) {
+  async function persistProjectByName(name, projectIdOverride = null) {
     const trimmed = String(name || "").trim();
     if (!trimmed) return;
     const existing = savedProjects.find((p) => p.id === (projectIdOverride || currentProjectId));
     const now = new Date().toISOString();
     const projectId = projectIdOverride || existing?.id || currentProjectId || uid("prj");
     try {
-      localStorage.setItem(projectStorageKey(projectId), JSON.stringify(sanitizeStateForStorage(state)));
+      await writeVfsJson(projectVfsPath(projectId), sanitizeStateForStorage(state));
       const nextList = [
         ...savedProjects.filter((p) => p.id !== projectId && p.name !== trimmed),
         { id: projectId, name: trimmed, updatedAt: now },
       ].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
-      saveProjectsIndex(nextList);
+      await writeVfsJson(VFS_PROJECTS_INDEX, nextList);
       setSavedProjects(nextList);
       setCurrentProjectId(projectId);
       setState((prev) => ({ ...prev, projectTitle: trimmed }));
@@ -3671,19 +3704,19 @@ export default function App() {
     setProjectDialog({ open: true, mode: "rename", name: existing.name });
   }
 
-  function persistThemeByName(name, themeIdOverride = null) {
+  async function persistThemeByName(name, themeIdOverride = null) {
     const trimmed = String(name || "").trim();
     if (!trimmed) return;
     const existing = savedThemes.find((t) => t.id === (themeIdOverride || currentThemeId));
     const now = new Date().toISOString();
     const themeId = themeIdOverride || existing?.id || currentThemeId || uid("thm");
     try {
-      localStorage.setItem(themeStorageKey(themeId), JSON.stringify(sanitizeThemeForStorage(state.theme)));
+      await writeVfsJson(themeVfsPath(themeId), sanitizeThemeForStorage(state.theme));
       const nextList = [
         ...savedThemes.filter((t) => t.id !== themeId && t.name !== trimmed),
         { id: themeId, name: trimmed, updatedAt: now },
       ].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
-      saveThemesIndex(nextList);
+      await writeVfsJson(VFS_THEMES_INDEX, nextList);
       setSavedThemes(nextList);
       setCurrentThemeId(themeId);
       setThemeDialog({ open: false, mode: "save", name: "" });
@@ -3724,14 +3757,13 @@ export default function App() {
     if (nextTheme.pageMargins) updateGlobalMargins(nextTheme.pageMargins);
   }
 
-  function loadThemeFromList(themeId) {
+  async function loadThemeFromList(themeId) {
     try {
-      const raw = localStorage.getItem(themeStorageKey(themeId));
-      if (!raw) {
+      const incoming = await readVfsJson(themeVfsPath(themeId), null);
+      if (!incoming) {
         window.alert("Tema non trovato.");
         return;
       }
-      const incoming = JSON.parse(raw);
       applySavedTheme(incoming);
       setCurrentThemeId(themeId);
       setTopbarMenuOpen(false);
@@ -3740,12 +3772,12 @@ export default function App() {
     }
   }
 
-  function deleteThemeFromList(themeId) {
+  async function deleteThemeFromList(themeId) {
     if (!window.confirm("Eliminare il tema salvato?")) return;
     try {
-      localStorage.removeItem(themeStorageKey(themeId));
+      await deleteVfsFile(themeVfsPath(themeId));
       const nextList = savedThemes.filter((t) => t.id !== themeId);
-      saveThemesIndex(nextList);
+      await writeVfsJson(VFS_THEMES_INDEX, nextList);
       setSavedThemes(nextList);
       if (currentThemeId === themeId) setCurrentThemeId(null);
       setTopbarMenuOpen(false);
@@ -3762,12 +3794,29 @@ export default function App() {
         setTopbarMenuOpen(false);
         return;
       }
-      const raw = localStorage.getItem(projectStorageKey(projectId));
-      if (!raw) {
+      const incoming = await readVfsJson(projectVfsPath(projectId), null);
+      if (!incoming) {
+        if (projectId === EMPTY_CATALOG_PROJECT.id) {
+          const initialState = { ...createDefaultState(), projectTitle: EMPTY_CATALOG_PROJECT.name };
+          const updatedAt = new Date().toISOString();
+          await ensureCatalogDirectories();
+          await writeVfsJson(projectVfsPath(projectId), sanitizeStateForStorage(initialState));
+          const currentProjects = normalizeSavedItems(await readVfsJson(VFS_PROJECTS_INDEX, []));
+          const nextProjects = [
+            ...currentProjects.filter((project) => project.id !== projectId && project.name !== EMPTY_CATALOG_PROJECT.name),
+            { ...EMPTY_CATALOG_PROJECT, updatedAt },
+          ].sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+          await writeVfsJson(VFS_PROJECTS_INDEX, nextProjects);
+          skipNextPageFormatAdjustRef.current = true;
+          setState(initialState);
+          setSavedProjects(nextProjects);
+          setCurrentProjectId(projectId);
+          setTopbarMenuOpen(false);
+          return;
+        }
         window.alert("Progetto non trovato.");
         return;
       }
-      const incoming = JSON.parse(raw);
       const base = createDefaultState();
       skipNextPageFormatAdjustRef.current = true;
       const incomingWorks = (incoming.works || []).map((w) => ({ ...normalizeWorkData(w), imageUrl: "" }));
@@ -3779,13 +3828,13 @@ export default function App() {
     }
   }
 
-  function deleteProjectFromList(projectId) {
+  async function deleteProjectFromList(projectId) {
     if (projectId === SAMPLE_PROJECT_ID) return;
     if (!window.confirm("Eliminare il progetto salvato?")) return;
     try {
-      localStorage.removeItem(projectStorageKey(projectId));
+      await deleteVfsFile(projectVfsPath(projectId));
       const nextList = savedProjects.filter((p) => p.id !== projectId);
-      saveProjectsIndex(nextList);
+      await writeVfsJson(VFS_PROJECTS_INDEX, nextList);
       setSavedProjects(nextList);
       if (currentProjectId === projectId) setCurrentProjectId(null);
       setTopbarMenuOpen(false);

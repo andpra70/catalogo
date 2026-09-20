@@ -127,12 +127,16 @@ La stampa usa il formato pagina scelto (A4, orizzontale, quadrati 20x20 / 21x21 
 Per ottenere un PDF più fedele:
 - abilita “grafica di sfondo / background graphics” nel dialogo di stampa del browser
 
-## Persistenza dati
+## OAuth2 e persistenza VFS2
 
-- Stato catalogo: `localStorage`
-- Immagini: `IndexedDB`
+L'applicazione richiede l'accesso Google tramite `/auth/widget.js`. Progetti,
+temi e immagini vengono salvati per utente su VFS2/MinIO sotto
+`catalogo-opere/`. IndexedDB resta una cache locale delle immagini per rendere
+più rapido il caricamento dell'editor.
 
-Questo evita errori di quota dovuti a immagini Base64 in `localStorage`.
+In produzione l'app è pubblicata dal front controller su
+`/catalogo-opere/`; il callback OAuth ritorna automaticamente allo stesso
+percorso che ha avviato il login.
 
 ## Struttura progetto (essenziale)
 
