@@ -20,6 +20,7 @@ export default defineConfig(({ mode }) => {
       proxy: {
         "/auth": { ...backendProxy },
         "/vfs": { ...backendProxy },
+        "/gpdr": { ...backendProxy },
       },
     },
     preview: {

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import AuthGate from "./components/AuthGate.jsx";
+import GdprWidget from "./components/GdprWidget.jsx";
 import ProjectPicker from "./components/ProjectPicker.jsx";
 import { getProjectIdFromUrl } from "./models/projectRoute";
 import "./styles.css";
@@ -31,5 +32,8 @@ function PublicCatalog({ slug }) {
 const publicMatch = window.location.pathname.match(/\/pub\/([^/]+)\/?$/i);
 
 ReactDOM.createRoot(document.getElementById("root")).render(
-  <React.StrictMode>{publicMatch?.[1] ? <PublicCatalog slug={decodeURIComponent(publicMatch[1])} /> : <AuthGate><CatalogBootstrap /></AuthGate>}</React.StrictMode>,
+  <React.StrictMode>
+    {publicMatch?.[1] ? <PublicCatalog slug={decodeURIComponent(publicMatch[1])} /> : <AuthGate><CatalogBootstrap /></AuthGate>}
+    <GdprWidget />
+  </React.StrictMode>,
 );

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import sampleProjectPayload from "./sample/sample.json";
 import { EMPTY_CATALOG_PROJECT, isCatalogProjectPayload, normalizeProjectFileSelection, normalizeSavedItems, projectVfsPath, themeVfsPath, VFS_PROJECTS_DIRECTORY, VFS_PROJECTS_INDEX, VFS_THEMES_INDEX } from "./models/storageModels";
+import { openProfileWidget } from "./services/profileWidget";
 import { deleteVfsFile, ensureCatalogDirectories, loadSavedIndexes, readVfsDataUrl, readVfsJson, uploadVfsFile, writeVfsJson } from "./services/vfsStorage";
 
 const PROJECTS_INDEX_KEY = "catalogo-opere-projects-index-v1";
@@ -3993,6 +3994,15 @@ export default function App({ initialProjectId = null, initialPublicState = null
     }
   }
 
+  async function showProfileWidget() {
+    setTopbarMenuOpen(false);
+    try {
+      await openProfileWidget();
+    } catch (error) {
+      window.alert(`Apertura profilo fallita: ${error?.message || "widget non disponibile"}`);
+    }
+  }
+
   return (
     <div
       className={`app-shell${readOnly ? " public-mode" : ""}`}
@@ -4033,6 +4043,7 @@ export default function App({ initialProjectId = null, initialPublicState = null
               <div className="topbar-overflow">
                 <button onClick={createNewProject}>Nuovo progetto</button>
                 <button onClick={openProjectFromExplorer}>Carica progetto</button>
+                <button onClick={showProfileWidget}>Profilo</button>
                 <button onClick={saveProjectQuick}>Salva progetto</button>
                 <button onClick={saveThemeQuick}>Salva tema</button>
                 <button onClick={publishCurrentProject}>Pubblica</button>
