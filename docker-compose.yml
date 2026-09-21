@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        VITE_APP_BASE: ${VITE_APP_BASE:-/catalogo-opere/}
     ports:
       - "6063:8080"
     restart: unless-stopped

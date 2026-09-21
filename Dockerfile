@@ -4,6 +4,8 @@ COPY package*.json ./
 RUN npm ci
 COPY index.html vite.config.js ./
 COPY src ./src
+ARG VITE_APP_BASE=/catalogo-opere/
+ENV VITE_APP_BASE=$VITE_APP_BASE
 RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:1.27-alpine
