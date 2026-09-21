@@ -2477,8 +2477,8 @@ function normalizeIncomingSnapshot(baseState, incomingSnapshot, worksOverride = 
   };
 }
 
-export default function App({ initialProjectId = null }) {
-  const [state, setState] = useState(loadState);
+export default function App({ initialProjectId = null, initialPublicState = null, readOnly = false }) {
+  const [state, setState] = useState(() => initialPublicState ? normalizeIncomingSnapshot(createDefaultState(), initialPublicState) : loadState());
   const prevPageFormatRef = useRef(state.pageFormat);
   const skipNextPageFormatAdjustRef = useRef(false);
   const [workEditor, setWorkEditor] = useState({ open: false, draft: null, mode: "create" });
@@ -2515,6 +2515,7 @@ export default function App({ initialProjectId = null }) {
     "Progetto";
 
   useEffect(() => {
+    if (readOnly) return;
     ensureCatalogDirectories()
       .then(() => loadSavedIndexes(VFS_PROJECTS_INDEX, VFS_THEMES_INDEX))
       .then(({ projects, themes }) => {
@@ -2528,13 +2529,14 @@ export default function App({ initialProjectId = null }) {
         setSavedThemes(themes);
       })
       .catch((err) => window.alert(`Caricamento VFS2 fallito: ${err.message}`));
-  }, [initialProjectId]);
+  }, [initialProjectId, readOnly]);
 
   useEffect(() => {
+    if (readOnly) return;
     if (!initialProjectId || initialProjectLoadedRef.current) return;
     initialProjectLoadedRef.current = true;
     loadProjectFromList(initialProjectId);
-  }, [initialProjectId]);
+  }, [initialProjectId, readOnly]);
 
   useEffect(() => {
     function onDocPointerDown(e) {
@@ -2561,6 +2563,7 @@ export default function App({ initialProjectId = null }) {
   }, []);
 
   useEffect(() => {
+    if (readOnly) return;
     let cancelled = false;
     (async () => {
       const worksWithImages = await Promise.all(
@@ -2587,7 +2590,7 @@ export default function App({ initialProjectId = null }) {
     return () => {
       cancelled = true;
     };
-  }, [state.works]);
+  }, [state.works, readOnly]);
 
   useEffect(() => {
     setState((prev) => {
@@ -3938,9 +3941,36 @@ export default function App({ initialProjectId = null }) {
     setHelpOpen(false);
   }
 
+  async function publishCurrentProject() {
+    const slug = String(state.projectTitle || currentProjectId || "catalogo").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "catalogo";
+    const sourcePath = `catalogo-opere/publish/${slug}`;
+    try {
+      for (const directory of ["catalogo-opere/publish", sourcePath]) {
+        try { await window.VfsWidget.mkdir(directory); } catch { /* directory already present */ }
+      }
+      await window.VfsWidget.salvaFileTesto(`${sourcePath}/project.json`, JSON.stringify(state, null, 2), "application/json");
+      await window.VfsWidget.publish(sourcePath, `catalogo-opere/${slug}`);
+      setTopbarMenuOpen(false);
+      window.alert(`Catalogo pubblicato: /catalogo-opere/pub/${slug}`);
+    } catch (error) {
+      window.alert(`Pubblicazione fallita: ${error.message || error}`);
+    }
+  }
+
+  async function unpublishCurrentProject() {
+    const slug = String(state.projectTitle || currentProjectId || "catalogo").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "catalogo";
+    try {
+      await window.VfsWidget.unpublish(`catalogo-opere/${slug}`);
+      setTopbarMenuOpen(false);
+      window.alert("Pubblicazione ritirata");
+    } catch (error) {
+      window.alert(`Ritiro pubblicazione fallito: ${error.message || error}`);
+    }
+  }
+
   return (
     <div
-      className="app-shell"
+      className={`app-shell${readOnly ? " public-mode" : ""}`}
       style={{
         "--theme-font": state.theme.fontFamily,
         "--accent-color": state.theme.accentColor,
@@ -3979,6 +4009,8 @@ export default function App({ initialProjectId = null }) {
                 <button onClick={createNewProject}>Nuovo progetto</button>
                 <button onClick={saveProjectQuick}>Salva progetto</button>
                 <button onClick={saveThemeQuick}>Salva tema</button>
+                <button onClick={publishCurrentProject}>Pubblica</button>
+                <button onClick={unpublishCurrentProject}>Ritira pubblicazione</button>
                 <button onClick={printCatalogPdf}>Esporta PDF Book</button>
                 <button onClick={exportCatalogJson}>Esporta JSON</button>
                 <button

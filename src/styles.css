@@ -2095,3 +2095,8 @@ textarea {
 .project-picker-item:hover { background: #f8f5ef; border-color: #a89d8c; }
 .project-picker-item span { color: #746c61; font-size: 12px; }
 @media (max-width: 560px) { .project-picker-empty { align-items: stretch; flex-direction: column; } .project-picker-create { text-align: center; } }
+.app-shell.public-mode .topbar { display: none; }
+.app-shell.public-mode button,
+.app-shell.public-mode input,
+.app-shell.public-mode textarea,
+.app-shell.public-mode select { pointer-events: none; }
