@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import sampleProjectPayload from "./sample/sample.json";
-import { EMPTY_CATALOG_PROJECT, normalizeSavedItems, projectVfsPath, themeVfsPath, VFS_PROJECTS_INDEX, VFS_THEMES_INDEX } from "./models/storageModels";
+import { EMPTY_CATALOG_PROJECT, isCatalogProjectPayload, normalizeProjectFileSelection, normalizeSavedItems, projectVfsPath, themeVfsPath, VFS_PROJECTS_DIRECTORY, VFS_PROJECTS_INDEX, VFS_THEMES_INDEX } from "./models/storageModels";
 import { deleteVfsFile, ensureCatalogDirectories, loadSavedIndexes, readVfsDataUrl, readVfsJson, uploadVfsFile, writeVfsJson } from "./services/vfsStorage";
 
 const PROJECTS_INDEX_KEY = "catalogo-opere-projects-index-v1";
@@ -3831,6 +3831,31 @@ export default function App({ initialProjectId = null, initialPublicState = null
     }
   }
 
+  async function openProjectFromExplorer() {
+    setTopbarMenuOpen(false);
+    try {
+      const selection = await window.VfsWidget.open(`private:${VFS_PROJECTS_DIRECTORY}`, {
+        mode: "file",
+        accept: [".json"],
+      });
+      if (!selection) return;
+      const selected = normalizeProjectFileSelection(selection);
+      if (!selected) throw new Error("Seleziona un file JSON dal volume privato");
+      const incoming = await readVfsJson(selected.path, null);
+      if (!isCatalogProjectPayload(incoming)) {
+        throw new Error("Il file selezionato non contiene un progetto valido");
+      }
+      await importCatalogPayload(incoming);
+      const canonicalPrefix = `${VFS_PROJECTS_DIRECTORY}/`;
+      const projectId = selected.path.startsWith(canonicalPrefix)
+        ? selected.path.slice(canonicalPrefix.length).replace(/\.json$/i, "")
+        : null;
+      setCurrentProjectId(projectId || null);
+    } catch (err) {
+      window.alert(`Caricamento progetto fallito: ${err?.message || "file non valido"}`);
+    }
+  }
+
   async function deleteProjectFromList(projectId) {
     if (projectId === SAMPLE_PROJECT_ID) return;
     if (!window.confirm("Eliminare il progetto salvato?")) return;
@@ -4007,6 +4032,7 @@ export default function App({ initialProjectId = null, initialPublicState = null
             {topbarMenuOpen && (
               <div className="topbar-overflow">
                 <button onClick={createNewProject}>Nuovo progetto</button>
+                <button onClick={openProjectFromExplorer}>Carica progetto</button>
                 <button onClick={saveProjectQuick}>Salva progetto</button>
                 <button onClick={saveThemeQuick}>Salva tema</button>
                 <button onClick={publishCurrentProject}>Pubblica</button>
